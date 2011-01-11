@@ -29,6 +29,7 @@ typedef struct {
    unsigned max_concurrent_operations;
    pagesim_callback callback;
    
+   unsigned char shift;//log_2
    unsigned offsetMask;
    unsigned pagenrMask;
 } pageSimParam_t;

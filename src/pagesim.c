@@ -48,7 +48,7 @@ int page_sim_init(unsigned page_size,
    sim_p.callback = callback;
    sim_p.offsetMask = sim_p.page_size -1;
    sim_p.pagenrMask = (sim_p.page_size * sim_p.addr_space_size -1);
-   sim_p.pagenrMask &= sim_p.offsetMask;
+   sim_p.pagenrMask -= sim_p.offsetMask;
    /*sprawdzenie poprawności wprowadzonych danych*/
    if (!check_param()){
       /*dane są niepoprawne*/
@@ -72,7 +72,7 @@ extern int page_sim_end(){
 
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
-#define PAGENR(ADDR) (ADDR & sim_p.pagenrMask)
+#define PAGENR(ADDR) ((ADDR & sim_p.pagenrMask) >> shift)
 #define OFFSET(ADDR) (ADDR & sim_p.offsetMask)
 
 int page_sim_get(unsigned a, uint8_t *v){
