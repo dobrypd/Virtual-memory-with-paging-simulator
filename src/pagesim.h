@@ -11,6 +11,13 @@
 
 #include <stdint.h>
 
+#define MINPAGESIZE 4
+#define MAXPAGESIZE 612
+#define MINMEMSIZE 1
+#define MAXMEMSIZE 64
+#define MINADDRSPACESIZE 1
+#define MAXADDRSPACESIZE 512
+
 /*init library*/
 typedef void (*pagesim_callback)(int op, int arg1, int arg2);
 
