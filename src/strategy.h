@@ -9,7 +9,7 @@
 #ifndef __STRATEGY_H
 #define __STRATEGY_H
 
-/*page - typ reprezentujacy strone w pamieci*/
-page* select_page(page* pages);
+#include "page.h"
+extern page* select_page(page* pages, site_z size);
 
 #endif

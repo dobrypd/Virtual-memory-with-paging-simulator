@@ -18,6 +18,7 @@ LDFLAGS += $(DEBUG)
 
 ALLTESTS = simpleTest
 OBJECTS = pagesim.o strategy.o
+OTHEROBJECTS = 
 
 all: $(ALLTESTS)
 
@@ -30,9 +31,9 @@ pagesim.o: pagesim.c pagesim.h
 	$(CC) $(CFLAGS) pagesim.c -o pagesim.o
 
 $(ALLTESTS)FIFO : $(ALLTESTS).c page.h pagesim.o fifo
-	$(CC) $(LDFLAGS) pagesim.o strategy.o $(ALLTESTS).c -o %$(ALLTESTS) : %FIFO
+	$(CC) $(LDFLAGS) $(OBJECTS) $(ALLTESTS).c -o %$(ALLTESTS) : %FIFO
 $(ALLTESTS)LFU : $(ALLTESTS).c page.h pagesim.o lfu
-	$(CC) $(LDFLAGS) pagesim.o strategy.o $(ALLTESTS).c -o %$(ALLTESTS) : %LFU
+	$(CC) $(LDFLAGS) $(OBJECTS) $(ALLTESTS).c -o %$(ALLTESTS) : %LFU
 $(ALLTESTS) : % : %FIFO % : %LFU
 clean:
 	rm -f *.o $(ALLTESTS) *~
