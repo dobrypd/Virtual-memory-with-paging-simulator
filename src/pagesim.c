@@ -12,11 +12,9 @@
 
 /*zmienne globalne*/
 /*tablica stron*/
-page* pageTable             = 0;
-pagesim_callback fcallback  = 0;
-unsigned offsetMask         = 0;
-unsigned pagenrMask         = 0;
-unsigned Gaddr_space_size   = 0;
+page* pages                 = 0;
+/*parametry symulacji*/
+pageSimParam_t sim_p = {0,0,0,0,0,0,0};
 
 void initPage(page* newPage, unsigned page_size){
    newPage->properties = 0;
@@ -30,20 +28,28 @@ int page_sim_init(unsigned page_size,
                          unsigned max_concurrent_operations,
                          pagesim_callback callback){
    /*zakładam że parametry są potęgami dwójki*/
-   unsigned i;
-   fcallback = callback;
-   offsetMask = page_size -1;
-   pagenrMask = (page_size * addr_space_size -1) & offsetMask;
-   Gaddr_space_size = addr_space_size;
+   sim_p.page_size = page_size;
+   sim_p.mem_size = mem_size;
+   sim_p.addr_space_size = addr_space_size;
+   sim_p.max_concurrent_operations = max_concurrent_operations;
+   sim_p.callback = callback;
+   sim_p.offsetMask = sim_p.page_size -1;
+   sim_p.pagenrMask = (sim_p.page_size * sim_p.addr_space_size -1) & sim_p.offsetMask;
    
    /*zajmowanie zasobów*/
-   pageTable = malloc(sizeof (page) * addr_space_size); /*obsuga bledu*/
+   unsigned i;
+   pages = malloc(sizeof (page) * addr_space_size); /*obsuga bledu*/
    for(i = 0; i < addr_space_size; ++i)
-      initPage(pageTable + i, page_size);
+      initPage(pages + i, page_size);
    
    errno = EACCES;
    return -1;
 } /*page_sim_init*/
+
+extern int page_sim_end(){
+      /*przejdź po stronach i pousuwaj ramki*/
+      free(pageTabl
+} /*page_sim_end()*/
 
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
