@@ -16,6 +16,7 @@ page* pageTable             = 0;
 pagesim_callback fcallback  = 0;
 unsigned offsetMask         = 0;
 unsigned pagenrMask         = 0;
+unsigned Gaddr_space_size   = 0;
 
 void initPage(page* newPage, unsigned page_size){
    newPage->properties = 0;
@@ -33,6 +34,7 @@ int page_sim_init(unsigned page_size,
    fcallback = callback;
    offsetMask = page_size -1;
    pagenrMask = (page_size * addr_space_size -1) & offsetMask;
+   Gaddr_space_size = addr_space_size;
    
    /*zajmowanie zasobów*/
    pageTable = malloc(sizeof (page) * addr_space_size); /*obsuga bledu*/
@@ -50,7 +52,7 @@ int page_sim_init(unsigned page_size,
 
 int page_sim_get(unsigned a, uint8_t *v){
    fcallback(1, PAGENR(a), 0);
-   
+   select_page(pageTable, Gaddr_space_size);
    return -1;
 } /*page_sim_get*/
 

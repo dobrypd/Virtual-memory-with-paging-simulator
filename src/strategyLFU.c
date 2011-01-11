@@ -10,7 +10,7 @@
 #include "page.h"
 #include "strategy.h"
 
-#define MODIF(X) (((X).poperties) & 1)
+#define MODIF(X) (((X).properties) & 1)
 page* select_page(page* pages, size_t size){
    unsigned i;
    page* minCounterPageModified;
@@ -20,15 +20,15 @@ page* select_page(page* pages, size_t size){
       if(MODIF(pages[i])){
          if (pages[i].counter < minM){
             minM = pages[i].counter;
-            minCounterPageModified = page + i;
+            minCounterPageModified = pages + i;
          }
       } else {
          if (pages[i].counter < minUM){
             minUM = pages[i].counter;
-            minCounterPageUnmodified = page + i;
+            minCounterPageUnmodified = pages + i;
          }
       }
    }
    
-   return (minM==minUM)?(minCounterPageUnmodified)(minCounterPageModified);
+   return (minM==minUM)?(minCounterPageUnmodified):(minCounterPageModified);
 }

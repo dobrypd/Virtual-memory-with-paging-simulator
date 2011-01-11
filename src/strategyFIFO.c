@@ -7,6 +7,7 @@
 */
 #include <limits.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "page.h"
 #include "strategy.h"
 
