@@ -11,11 +11,10 @@
 
 typedef struct page {
    unsigned char properties; 
-   /*modyficated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci)*/
-   long long counter;
-   /*licznik odwołań (FIFO)/ */
-   uint8_t** frameAddr;
-   /*tablica 2wymiarowa (ramka * komórka w ramce)*/
+   /*modificated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci)*/
+   unsigned long long counter;
+   /*licznik odwołań LFU, FIFO: wpisywana kolejna liczba*/
+   uint8_t* frameAddr;
 } page
 
 #endif
