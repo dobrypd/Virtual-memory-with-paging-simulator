@@ -1,5 +1,3 @@
-Everything
-
 ----
 Struktura strony zawierać będzie: bit obezcności, bit modyfikacji (dla optymalizacji IO z dyskiem), bit użycia? aby 
 zabezpieczyć synchronizacje, adres fizyczny strony.

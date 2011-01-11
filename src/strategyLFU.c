@@ -5,12 +5,13 @@
  * 11.01.2011r.
  *
 */
-#include<limits.h>
+#include <limits.h>
+#include <stdlib.h>
 #include "page.h"
 #include "strategy.h"
 
 #define MODIF(X) (((X).poperties) & 1)
-page* select_page(page* pages, site_z size){
+page* select_page(page* pages, size_t size){
    unsigned i;
    page* minCounterPageModified;
    page* minCounterPageUnmodified;

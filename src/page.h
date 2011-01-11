@@ -9,12 +9,17 @@
 #ifndef __PAGE_H
 #define __PAGE_H
 
+#include <stdint.h>
+
+#define MBIT (1)
+#define VBIT (2)
+
 typedef struct page {
    unsigned char properties; 
    /*modificated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci)*/
    unsigned long long counter;
    /*licznik odwołań LFU, FIFO: wpisywana kolejna liczba*/
    uint8_t* frameAddr;
-} page
+} page;
 
 #endif

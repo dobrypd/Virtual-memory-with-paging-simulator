@@ -9,7 +9,9 @@
 #ifndef __STRATEGY_H
 #define __STRATEGY_H
 
+#include <stdlib.h>
+
 #include "page.h"
-extern page* select_page(page* pages, site_z size);
+extern page* select_page(page* pages, size_t size);
 
 #endif
