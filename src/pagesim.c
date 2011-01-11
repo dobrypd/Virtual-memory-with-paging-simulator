@@ -34,7 +34,8 @@ int page_sim_init(unsigned page_size,
    sim_p.max_concurrent_operations = max_concurrent_operations;
    sim_p.callback = callback;
    sim_p.offsetMask = sim_p.page_size -1;
-   sim_p.pagenrMask = (sim_p.page_size * sim_p.addr_space_size -1) & sim_p.offsetMask;
+   sim_p.pagenrMask = (sim_p.page_size * sim_p.addr_space_size -1);
+   sim_p.pagenrMask &= sim_p.offsetMask;
    
    /*zajmowanie zasobów*/
    unsigned i;
@@ -48,21 +49,21 @@ int page_sim_init(unsigned page_size,
 
 extern int page_sim_end(){
       /*przejdź po stronach i pousuwaj ramki*/
-      free(pageTabl
+      free(pages);
 } /*page_sim_end()*/
 
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
-#define PAGENR(ADDR) (ADDR & pagenrMask)
-#define OFFSET(ADDR) (ADDR & offsetMask)
+#define PAGENR(ADDR) (ADDR & sim_p.pagenrMask)
+#define OFFSET(ADDR) (ADDR & sim_p.offsetMask)
 
 int page_sim_get(unsigned a, uint8_t *v){
-   fcallback(1, PAGENR(a), 0);
-   select_page(pageTable, Gaddr_space_size);
+   sim_p.callback(1, PAGENR(a), 0);
+   select_page(pages, sim_p.addr_space_size);
    return -1;
 } /*page_sim_get*/
 
 int page_sim_set(unsigned a, uint8_t v){
-   fcallback(1, PAGENR(a), 0);
+   sim_p.callback(1, PAGENR(a), 0);
    return -1;
 } /*page_sim_set*/

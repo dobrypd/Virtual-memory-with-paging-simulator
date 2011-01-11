@@ -13,14 +13,12 @@ DEBUG=
 ifeq ($(debug), 1)
 	DEBUG=-g
 endif
-CFLAGF += $(DEBUG)
+CFLAGS += $(DEBUG)
 LDFLAGS += $(DEBUG)
 
 ALLTESTS = simpleTest
 OBJECTS = pagesim.o strategy.o
 OTHEROBJECTS = 
-
-all: $(ALLTESTS)
 
 fifo: strategyFIFO.c strategy.h
 	$(CC) $(CFLAGS) strategyFIFO.c -o strategy.o
@@ -30,10 +28,11 @@ lfu: strategyLFU.c strategy.h
 pagesim.o: pagesim.c pagesim.h
 	$(CC) $(CFLAGS) pagesim.c -o pagesim.o
 
-$(ALLTESTS)FIFO : $(ALLTESTS).c page.h pagesim.o fifo
-	$(CC) $(LDFLAGS) $(OBJECTS) $(ALLTESTS).c -o %$(ALLTESTS) : %FIFO
-$(ALLTESTS)LFU : $(ALLTESTS).c page.h pagesim.o lfu
-	$(CC) $(LDFLAGS) $(OBJECTS) $(ALLTESTS).c -o %$(ALLTESTS) : %LFU
-$(ALLTESTS) : % : %FIFO % : %LFU
+fifotest: fifo pagesim.o
+	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o -o simpleTest
+
+lfutest: lfu pagesim.o
+	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o -o simpleTest
+
 clean:
 	rm -f *.o $(ALLTESTS) *~
