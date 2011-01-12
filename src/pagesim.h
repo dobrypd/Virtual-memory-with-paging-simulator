@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define MINPAGESIZE 4
-#define MAXPAGESIZE 612
+#define MAXPAGESIZE 512
 #define MINMEMSIZE 1
 #define MAXMEMSIZE 64
 #define MINADDRSPACESIZE 1
@@ -29,9 +29,8 @@ typedef struct {
    unsigned max_concurrent_operations;
    pagesim_callback callback;
    
-   unsigned char shift;//log_2
+   unsigned char shift;
    unsigned offsetMask;
-   unsigned pagenrMask;
 } pageSimParam_t;
 
 extern int page_sim_init(unsigned page_size, 
