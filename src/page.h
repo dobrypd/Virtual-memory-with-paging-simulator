@@ -13,10 +13,11 @@
 
 #define MBIT (1)
 #define VBIT (2)
+#define IBIT (4)
 
 typedef struct page {
    unsigned char properties; 
-   /*modificated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci) & 2^2 (first allocated)*/
+   /*modificated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci) & 2^2 (initialized)*/
    unsigned long long counter;
    /*licznik odwołań LFU, FIFO: wpisywana kolejna liczba*/
       /*zamiast tego można zastosować wskaźnik i utworzyć listę

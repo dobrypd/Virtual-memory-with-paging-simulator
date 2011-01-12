@@ -31,6 +31,13 @@ typedef struct {
    
    unsigned char shift;
    unsigned offsetMask;
+   
+   unsigned fff; 
+   /*first free frame - metoda alokowania pamięci - od początku do końca*/
+   /*nigdy nie zwalniam pamięci więc tak może być - nie utworzą się dziury*/
+   /*pierwsza wolna ramka w pamięci operacyjnej jeżeli alokuje na samym początku*/
+   unsigned counter;
+   /*globalny counter potrzebny do strategii*/
 } pageSimParam_t;
 
 extern int page_sim_init(unsigned page_size, 
