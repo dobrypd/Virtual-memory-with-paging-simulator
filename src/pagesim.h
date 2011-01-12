@@ -38,8 +38,11 @@ extern int page_sim_init(unsigned page_size,
       unsigned addr_space_size,
       unsigned max_concurrent_operations,
       pagesim_callback callback);
+
 extern int page_sim_end();
+
 extern int page_sim_get(unsigned a, uint8_t *v);
+
 extern int page_sim_set(unsigned a, uint8_t v);
 
 #endif

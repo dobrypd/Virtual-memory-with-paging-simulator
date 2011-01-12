@@ -14,7 +14,8 @@ void callback(int op, int arg1, int arg2)
    printf("op=%d\targ1=%d\targ2=%d\n", op, arg1, arg2);
 }
 int main(){
-   page_sim_init(4/*rozmiar ramki*/, 8/*ilość pamięci (ilość ramek)*/,
+#define ROZMIARRAMKI 512
+   page_sim_init(ROZMIARRAMKI/*rozmiar ramki*/, 8/*ilość pamięci (ilość ramek)*/,
                  16/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
                  &callback);
    uint8_t v;
@@ -31,12 +32,12 @@ int main(){
    page_sim_get(112, &v);
    printf("[112]v=%d\n", &v);
    */
-#define MAX 8*4
+#define MAX 8*ROZMIARRAMKI
    printf("Pętle : set od 1 do MAX wartościami od 1 do MAX i później get na nich\n");
-   uint8_t i  =0;
+   int i  =0;
    for(i = 1; i <= MAX; ++i){
       printf("zapisuję %d\n", i-1);
-      page_sim_set(i-1, i);
+      page_sim_set(i-1, i % 256);
    }
    printf("zapisałem\nodczytuję od końca...");
    for(i = MAX; i > 0; i--){
