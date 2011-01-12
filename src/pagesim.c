@@ -22,18 +22,16 @@ int verbose = 0;
 #include "pagesim.h"
 #include "strategy.h"
 
-
+#define PAGEFILENAME "./pagefile"
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
 #define PAGENR(ADDR) ((ADDR) >> sim_p.shift)
 #define OFFSET(ADDR) (ADDR & sim_p.offsetMask)
 
-#define PAGEFILENAME "./pagefile"
-
 
 /*zmienne globalne*/
 /*tablica stron*/
-page** pages = 0;
+page* pages = 0;
 /*sumylowana pamięć operacyjna*/
 uint8_t* sim_memory = NULL;
 /*deskryptor pliku stron na dysku*/
@@ -43,24 +41,10 @@ int pagefileFD = 0;
 /*parametry symulacji*/
 pageSimParam_t sim_p = {0,0,0,0,0,0,0};
 
-
-unsigned alloc(unsigned page_nr){
-   if (verbose) fprintf(stderr, 
-      "DEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %#x\n", 
-                        sim_p.fff, sim_memory + sim_p.page_size*(sim_p.fff));
-   pages[page_nr]->properties |= MBIT;
-   
-   return (sim_memory + sim_p.page_size*sim_p.fff++);
-} /*alloc*/
-
-
-page* initPage(unsigned frame_addr){
-   page* newPage = malloc(sizeof(page));
+void initPage(page* newPage, unsigned page_size){
    newPage->properties = 0;
    newPage->counter = 0;
    newPage->frame = NULL;
-   pages[page_nr]->frame = frame_addr;
-   return newPage;
 } /*initPage*/
 
 #define check_param ( \
@@ -109,10 +93,11 @@ int page_sim_init(unsigned page_size,
    
    /*zajmowanie zasobów*/
    unsigned i;
-   pages = malloc(addr_space_size * sizeof(page*));
-   sim_memory = malloc(sim_p.mem_size * sim_p.page_size);
+   pages = malloc(sizeof (page) * addr_space_size);
    for(i = 0; i < addr_space_size; ++i)
-      pages[i] = NULL;
+      initPage(pages + i, page_size);
+   sim_memory = malloc(sim_p.mem_size * sim_p.page_size);
+   
    /*tworzenie pliku*/
    pagefileFD = creat(PAGEFILENAME, 0644);
    if(pagefileFD == -1)
@@ -122,27 +107,31 @@ int page_sim_init(unsigned page_size,
 } /*page_sim_init*/
 
 extern int page_sim_end(){
-   if (verbose) fprintf(stderr, "DEBUG: page_sim_end(): \n");
-   
+   if (verbose) fprintf(stderr, "DEBUG: page_sim_end():\n");
    unlink(PAGEFILENAME);
-   
    free(sim_memory);
-   
-   unsigned i;
-   for(i = 0; i < sim_p.addr_space_size; ++i)
-      if(pages[i] != NULL)
-         free(pages[i]);
    free(pages);
-   
    if (verbose) fprintf(stderr, "OK\n");
    return 0;
 } /*page_sim_end()*/
+
+
+unsigned alloc(unsigned page_nr){
+   if (verbose) fprintf(stderr, 
+      "DEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %#x\n", 
+                        sim_p.fff, sim_memory + sim_p.page_size*(sim_p.fff));
+   
+   pages[page_nr].properties |= MBIT;
+   pages[page_nr].properties |= VBIT;
+   
+   return (sim_memory + sim_p.page_size*sim_p.fff++);
+} /*alloc*/
 
 int load_page(unsigned page_nr){
    if (verbose) fprintf(stderr, "\tload_page(%u):\n", page_nr);
    
    /*sprawdzam czy jest w pamięci*/
-   if(pages[page_nr] != NULL){
+   if((pages[page_nr].properties) & VBIT){
       if (verbose) fprintf(stderr, "\t-direct\n");
       
    } else { /*nie jest w pamieci*/
@@ -154,7 +143,7 @@ int load_page(unsigned page_nr){
          /*ponieważ nie można zwalniać zasobów*/
          /*oznacza to że muszę to zaalokować*/
          if (verbose) fprintf(stderr, "\t-not initialized\n");
-         pages[page_nr]       = initPage(alloc(page_nr));
+         pages[page_nr].frame = alloc(page_nr);
          
       } else {
          
@@ -162,8 +151,8 @@ int load_page(unsigned page_nr){
          /*nie mam strony w pamięci   */
          /*i nie mam miejsca na nią   */
          /*trzeba coś wywalić na dysk */
-         if (verbose) fprintf(stderr, "\t-in pagefile\n");
          
+         if (verbose) fprintf(stderr, "\t-in pagefile\n");
          page* to_change = select_page(pages, sim_p.addr_space_size);
          if (to_change == NULL){
             /*błąd?*/
@@ -174,11 +163,11 @@ int load_page(unsigned page_nr){
           *    na dysk adres (w pliku dyskowym pagefile)
           *       (to_change - pages) / sizeof(page)
           */
-         sim_p.callback(2, (to_change - pages) / sizeof(page*), (to_change->frame - sim_memory) / sim_p.page_size); /*inicjacja*/
+         sim_p.callback(2, (to_change - pages) / sizeof(page), (to_change->frame - sim_memory) / sim_p.page_size); /*inicjacja*/
          
          /*ZAPIS*/
          
-         sim_p.callback(3, (to_change - pages) / sizeof(page*), (to_change->frame - sim_memory) / sim_p.page_size); /*zapisano*/
+         sim_p.callback(3, (to_change - pages) / sizeof(page), (to_change->frame - sim_memory) / sim_p.page_size); /*zapisano*/
          
          /*    wczytuję stronę z dysku z adresu
           *       page_nr
@@ -190,9 +179,8 @@ int load_page(unsigned page_nr){
          /*WCZYTYWANIE*/
          
          sim_p.callback(5, page_nr, (to_change->frame - sim_memory) / sim_p.page_size); /*wczytano*/
-         pages[page_nr] = initPage;
-         pages[page_nr].frame = to_change->frame;
          
+         pages[page_nr].frame = to_change->frame;
       }
    }
    if (verbose) fprintf(stderr, "\tloaded\n");
