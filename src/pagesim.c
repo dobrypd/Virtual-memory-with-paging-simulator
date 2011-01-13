@@ -26,7 +26,8 @@ int verbose = 0;
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
 #define PAGENR(ADDR) ((ADDR) >> sim_p.shift)
-#define OFFSET(ADDR) (ADDR & sim_p.offsetMask)
+#define OFFSET(ADDR) ((ADDR) & sim_p.offsetMask)
+#define FRAMENR(ADDR) (((ADDR) - sim_memory) / sim_p.page_size)
 
 
 /*zmienne globalne*/
@@ -116,9 +117,9 @@ extern int page_sim_end(){
 } /*page_sim_end()*/
 
 
-unsigned alloc(unsigned page_nr){
+uint8_t* alloc(unsigned page_nr){
    if (verbose) fprintf(stderr, 
-      "DEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %#x\n", 
+      "\t\tDEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %#x\n", 
                         sim_p.fff, sim_memory + sim_p.page_size*(sim_p.fff));
    
    pages[page_nr].properties |= MBIT;
@@ -147,38 +148,42 @@ int load_page(unsigned page_nr){
          
       } else {
          
-         /*tu się zaczyna cała zabawa:*/
-         /*nie mam strony w pamięci   */
-         /*i nie mam miejsca na nią   */
-         /*trzeba coś wywalić na dysk */
-         
+         /* tu się zaczyna cała zabawa:
+          * nie mam strony w pamięci
+          * i nie mam miejsca na nią
+          * trzeba coś wywalić na dysk 
+         */
          if (verbose) fprintf(stderr, "\t-in pagefile\n");
+         
          page* to_change = select_page(pages, sim_p.addr_space_size);
          if (to_change == NULL){
             /*błąd?*/
          }
          
-         /*    wyrzucam strone z pamięci (NR)
-          *       (to_change->frame - sim_memory) / sim_p.page_size
-          *    na dysk adres (w pliku dyskowym pagefile)
-          *       (to_change - pages) / sizeof(page)
-          */
-         sim_p.callback(2, (to_change - pages) / sizeof(page), (to_change->frame - sim_memory) / sim_p.page_size); /*inicjacja*/
-         
-         /*ZAPIS*/
-         
-         sim_p.callback(3, (to_change - pages) / sizeof(page), (to_change->frame - sim_memory) / sim_p.page_size); /*zapisano*/
+         /*jezeli zmodyfikowana*/
+         if (to_change->properties & MBIT){
+            /*    wyrzucam strone z pamięci (NR)
+            *       (to_change->frame - sim_memory) / sim_p.page_size
+            *    na dysk adres (w pliku dyskowym pagefile)
+            *       (to_change - pages) / sizeof(page)
+            */
+            sim_p.callback(2, (to_change - pages) / sizeof(page), FRAMENR(to_change->frame)); /*inicjacja*/
+            
+            /*ZAPIS*/
+            
+            sim_p.callback(3, (to_change - pages) / sizeof(page), FRAMENR(to_change->frame)); /*zapisano*/
+         }
          
          /*    wczytuję stronę z dysku z adresu
           *       page_nr
           *    do pamieci pod adres
           *       (to_change.frame - sim_memory) / sim_p.page_size
           */
-         sim_p.callback(4, page_nr, (to_change->frame - sim_memory) / sim_p.page_size); /*inicjowane*/
+         sim_p.callback(4, page_nr, FRAMENR(to_change->frame)); /*inicjowane*/
          
          /*WCZYTYWANIE*/
          
-         sim_p.callback(5, page_nr, (to_change->frame - sim_memory) / sim_p.page_size); /*wczytano*/
+         sim_p.callback(5, page_nr, FRAMENR(to_change->frame)); /*wczytano*/
          
          pages[page_nr].frame = to_change->frame;
       }
@@ -196,9 +201,9 @@ int page_sim_get(unsigned a, uint8_t *v){
    
    *v = pages[PAGENR(a)].frame[OFFSET(a)];
    
-   sim_p.callback(1, PAGENR(a), (pages[PAGENR(a)].frame - mem_size) / sim_p.page_size); /*wykonano*/
+   sim_p.callback(6, PAGENR(a), FRAMENR(pages[PAGENR(a)].frame)); /*wykonano*/
    
-   if (verbose) fprintf(stderr, "\t\t->OK\n");
+   if (verbose) fprintf(stderr, "->OK\n");
    
    return 0;
 } /*page_sim_get*/
@@ -213,9 +218,9 @@ int page_sim_set(unsigned a, uint8_t v){
    pages[PAGENR(a)].properties |= (pages[PAGENR(a)].frame[OFFSET(a)] == v)?0:MBIT;
    pages[PAGENR(a)].frame[OFFSET(a)] = v;
    
-   sim_p.callback(1, PAGENR(a), (pages[PAGENR(a)].frame - mem_size) / sim_p.page_size); /*wykonano*/
+   sim_p.callback(6, PAGENR(a), FRAMENR(pages[PAGENR(a)].frame)); /*wykonano*/
    
-   if (verbose) fprintf(stderr, "\t\t->OK\n");
+   if (verbose) fprintf(stderr, "->OK\n");
    
    return 0;
 } /*page_sim_set*/
