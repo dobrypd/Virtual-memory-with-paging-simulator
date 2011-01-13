@@ -23,6 +23,8 @@ typedef void (*pagesim_callback)(int op, int arg1, int arg2);
 
 typedef struct {
    /*page simulator parameters*/
+   unsigned char init;
+   
    unsigned page_size;
    unsigned mem_size;
    unsigned addr_space_size;
@@ -36,8 +38,6 @@ typedef struct {
    /*first free frame - metoda alokowania pamięci - od początku do końca*/
    /*nigdy nie zwalniam pamięci więc tak może być - nie utworzą się dziury*/
    /*pierwsza wolna ramka w pamięci operacyjnej jeżeli alokuje na samym początku*/
-   unsigned counter;
-   /*globalny counter potrzebny do strategii*/
 } pageSimParam_t;
 
 extern int page_sim_init(unsigned page_size, 

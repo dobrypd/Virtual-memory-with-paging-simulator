@@ -40,7 +40,7 @@ int pagefileFD = 0;
 
 
 /*parametry symulacji*/
-pageSimParam_t sim_p = {0,0,0,0,0,0,0};
+pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 
 void initPage(page* newPage, unsigned page_size){
    newPage->properties = 0;
@@ -104,6 +104,7 @@ int page_sim_init(unsigned page_size,
    if(pagefileFD == -1)
       return -1;
    
+   sim_p.init = 1;
    return 0;
 } /*page_sim_init*/
 
@@ -112,6 +113,7 @@ extern int page_sim_end(){
    unlink(PAGEFILENAME);
    free(sim_memory);
    free(pages);
+   sim_p.init = 0;
    if (verbose) fprintf(stderr, "OK\n");
    return 0;
 } /*page_sim_end()*/
@@ -132,7 +134,7 @@ int load_page(unsigned page_nr){
    if (verbose) fprintf(stderr, "\tload_page(%u):\n", page_nr);
    
    /*sprawdzam czy jest w pamięci*/
-   if((pages[page_nr].properties) & VBIT){
+   if(VPAGE(pages[page_nr])){
       if (verbose) fprintf(stderr, "\t-direct\n");
       
    } else { /*nie jest w pamieci*/
@@ -159,6 +161,7 @@ int load_page(unsigned page_nr){
          if (to_change == NULL){
             /*błąd?*/
          }
+         if (verbose) fprintf(stderr, "\t\t-selected with counter=%llu\n", to_change->counter);
          
          /*jezeli zmodyfikowana*/
          if (to_change->properties & MBIT){
@@ -168,6 +171,8 @@ int load_page(unsigned page_nr){
             *       (to_change - pages) / sizeof(page)
             */
             sim_p.callback(2, (to_change - pages) / sizeof(page), FRAMENR(to_change->frame)); /*inicjacja*/
+            
+            to_change->counter = 0;
             
             /*ZAPIS*/
             
@@ -188,12 +193,19 @@ int load_page(unsigned page_nr){
          pages[page_nr].frame = to_change->frame;
       }
    }
+   
+   touch_page(pages + page_nr);
+   
    if (verbose) fprintf(stderr, "\tloaded\n");
    return 0;
 } /*load_page*/
 
 int page_sim_get(unsigned a, uint8_t *v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_get(%#x, &): \n", a);
+   if(!sim_p.init){
+      if (verbose) fprintf(stderr, "NIEZAINICJOWANY SYMULATOR: \n");
+      return -1;
+   }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczenie odwolania do strony*/
    
@@ -210,6 +222,10 @@ int page_sim_get(unsigned a, uint8_t *v){
 
 int page_sim_set(unsigned a, uint8_t v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_set(%#x, %u): \n", a, v);
+   if(!sim_p.init){
+      if (verbose) fprintf(stderr, "NIEZAINICJOWANY SYMULATOR: \n");
+      return -1;
+   }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczecie odwolania do strony*/
    

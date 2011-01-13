@@ -15,8 +15,10 @@ void callback(int op, int arg1, int arg2)
 }
 int main(){
 #define ROZMIARRAMKI 4
-   page_sim_init(ROZMIARRAMKI/*rozmiar ramki*/, 8/*ilość pamięci (ilość ramek)*/,
-                 16/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
+#define ILERAMEK 2
+#define ILESTRON 4
+   page_sim_init(ROZMIARRAMKI/*rozmiar ramki*/, ILERAMEK/*ilość pamięci (ilość ramek)*/,
+                 ILESTRON/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
                  &callback);
    uint8_t v;
    /*page_sim_set(1, 5);
@@ -32,7 +34,7 @@ int main(){
    page_sim_get(112, &v);
    printf("[112]v=%d\n", &v);
    */
-#define MAX 8*ROZMIARRAMKI
+#define MAX ILERAMEK*ROZMIARRAMKI
    printf("Pętle : set od 1 do MAX wartościami od 1 do MAX i później get na nich\n");
    int i  =0;
    for(i = 1; i <= MAX; ++i){
