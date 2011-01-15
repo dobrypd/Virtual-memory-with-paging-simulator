@@ -8,7 +8,7 @@
 ##MAKEFILE DO ZMIANY, TEN JEST DO TESTOWANIA
 CC = gcc
 CFLAGS = -Wall -c
-LDFLAGS = -Wall
+LDFLAGS = -Wall -lrt
 DEBUG=
 ifeq ($(debug), 1)
 	DEBUG=-g

@@ -22,7 +22,6 @@ typedef struct page {
    unsigned char properties; 
    /*modificated bit * 2^0 & valid/invalid *2^1 (invalid - nie znajduje się w pamięci)*/
    unsigned long long counter;
-   /*licznik odwołań LFU, FIFO: wpisywana kolejna liczba*/
       /*zamiast tego można zastosować wskaźnik i utworzyć listę
          * w przypadku FIFO kolejka
          * w przypadku LFU będzie przepisywany dany adres 'na górę'

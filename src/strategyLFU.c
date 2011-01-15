@@ -12,11 +12,11 @@
 
 page* select_page(page* pages, size_t size){
    unsigned i;
-   page* minCounterPageModified;
-   page* minCounterPageUnmodified;
+   page* minCounterPageModified = NULL;
+   page* minCounterPageUnmodified = NULL;
    unsigned long long minM = ULLONG_MAX, minUM = ULLONG_MAX;
    for(i = 0; i < size; ++i){
-      if (pages[i].properties & VBIT){
+      if (VPAGE(pages[i])){
          if(MPAGE(pages[i])){
             if (pages[i].counter < minM){
                minM = pages[i].counter;
@@ -30,6 +30,7 @@ page* select_page(page* pages, size_t size){
          }
       }
    }
+   if (minUM==ULLONG_MAX) return (minM==ULLONG_MAX)?(NULL):(minCounterPageModified);
    return (minM==minUM)?(minCounterPageUnmodified):(minCounterPageModified);
 }
 

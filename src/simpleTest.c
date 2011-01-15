@@ -15,7 +15,7 @@ void callback(int op, int arg1, int arg2)
 }
 int main(){
 #define ROZMIARRAMKI 4
-#define ILERAMEK 2
+#define ILERAMEK 1
 #define ILESTRON 4
    page_sim_init(ROZMIARRAMKI/*rozmiar ramki*/, ILERAMEK/*ilość pamięci (ilość ramek)*/,
                  ILESTRON/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
@@ -37,14 +37,14 @@ int main(){
 #define MAX ILERAMEK*ROZMIARRAMKI
    printf("Pętle : set od 1 do MAX wartościami od 1 do MAX i później get na nich\n");
    int i  =0;
-   for(i = 1; i <= MAX; ++i){
+   for(i = 1; i <= ILESTRON*ROZMIARRAMKI; ++i){
       printf("zapisuję %d\n", i % 256);
       page_sim_set(i-1, i % 256);
    }
-   printf("zapisałem\nodczytuję od końca...");
-   for(i = MAX; i > 0; i--){
-      page_sim_get(i-1, &v);
-      printf("Odczytano [%d] = %u\n", i-1, v);
+   printf("zapisałem\nodczytuję od początku...");
+   for(i = 0; i < ILESTRON * ROZMIARRAMKI; ++i){
+      page_sim_get(i, &v);
+      printf("Odczytano [%d] = %u\n", i, v);
    }
    printf("koniec\n");
    page_sim_end();

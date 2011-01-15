@@ -17,6 +17,7 @@ int verbose = 0;
 #include <errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <aio.h>
 
 #include "page.h"
 #include "pagesim.h"
@@ -37,12 +38,14 @@ page* pages = 0;
 uint8_t* sim_memory = NULL;
 /*deskryptor pliku stron na dysku*/
 int pagefileFD = 0;
+/*struktury aiocb dla każdej strony*/
+struct aiocb* aiocb_for_frame = NULL;
 
 
 /*parametry symulacji*/
 pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 
-void initPage(page* newPage, unsigned page_size){
+void initPage(page* newPage){
    newPage->properties = 0;
    newPage->counter = 0;
    newPage->frame = NULL;
@@ -88,21 +91,33 @@ int page_sim_init(unsigned page_size,
    /*sprawdzenie poprawności wprowadzonych danych*/
    if (!check_param){
       /*dane są niepoprawne*/
-      errno = EINVAL;
-      return -1;
+      /*errno = EINVAL;
+      return -1;*/
    }
    
    /*zajmowanie zasobów*/
    unsigned i;
-   pages = malloc(sizeof (page) * addr_space_size);
-   for(i = 0; i < addr_space_size; ++i)
-      initPage(pages + i, page_size);
+   pages = malloc(sizeof (page) * sim_p.addr_space_size);
+   for(i = 0; i < sim_p.addr_space_size; ++i)
+      initPage(pages + i);
    sim_memory = malloc(sim_p.mem_size * sim_p.page_size);
+   aiocb_for_frame = malloc(sizeof(struct aiocb) * sim_p.mem_size);
+      
    
    /*tworzenie pliku*/
-   pagefileFD = creat(PAGEFILENAME, 0644);
+   pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT|O_TRUNC,0644);
    if(pagefileFD == -1)
       return -1;
+   
+   /*inicjowanie co sie da w aiocb*/
+   for(i = 0; i < sim_p.mem_size; ++i){
+      aiocb_for_frame[i].aio_fildes = pagefileFD;
+      aiocb_for_frame[i].aio_offset = 0x0;
+      aiocb_for_frame[i].aio_nbytes = sim_p.page_size;
+      aiocb_for_frame[i].aio_buf = sim_memory + i;
+      aiocb_for_frame[i].aio_lio_opcode = LIO_NOP;
+      aiocb_for_frame[i].aio_sigevent = SIGEV_NONE;
+   }
    
    sim_p.init = 1;
    return 0;
@@ -110,9 +125,11 @@ int page_sim_init(unsigned page_size,
 
 extern int page_sim_end(){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_end():\n");
+   close(pagefileFD);
    unlink(PAGEFILENAME);
    free(sim_memory);
    free(pages);
+   free(aiocb_for_frame);
    sim_p.init = 0;
    if (verbose) fprintf(stderr, "OK\n");
    return 0;
@@ -121,11 +138,12 @@ extern int page_sim_end(){
 
 uint8_t* alloc(unsigned page_nr){
    if (verbose) fprintf(stderr, 
-      "\t\tDEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %#x\n", 
+      "\t\tDEBUG: alloc(): alokuje nowy obszar (nr %u) o adresie %p\n", 
                         sim_p.fff, sim_memory + sim_p.page_size*(sim_p.fff));
    
    pages[page_nr].properties |= MBIT;
    pages[page_nr].properties |= VBIT;
+   if (verbose) fprintf(stderr, "\t\tDEBUG: alloc(): set properties: (pattern)= %#x\n", pages[page_nr].properties);
    
    return (sim_memory + sim_p.page_size*sim_p.fff++);
 } /*alloc*/
@@ -160,8 +178,10 @@ int load_page(unsigned page_nr){
          page* to_change = select_page(pages, sim_p.addr_space_size);
          if (to_change == NULL){
             /*błąd?*/
+            if (verbose) fprintf(stderr, "\t\t-page does not found. Pointer to page is NULL!!!\n");
+            return -1;
          }
-         if (verbose) fprintf(stderr, "\t\t-selected with counter=%llu\n", to_change->counter);
+         if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", ((to_change - pages) ), to_change->counter);
          
          /*jezeli zmodyfikowana*/
          if (to_change->properties & MBIT){
@@ -170,14 +190,15 @@ int load_page(unsigned page_nr){
             *    na dysk adres (w pliku dyskowym pagefile)
             *       (to_change - pages) / sizeof(page)
             */
-            sim_p.callback(2, (to_change - pages) / sizeof(page), FRAMENR(to_change->frame)); /*inicjacja*/
-            
-            to_change->counter = 0;
+            sim_p.callback(2, (to_change - pages), FRAMENR(to_change->frame)); /*inicjacja*/
             
             /*ZAPIS*/
             
-            sim_p.callback(3, (to_change - pages) / sizeof(page), FRAMENR(to_change->frame)); /*zapisano*/
+            sim_p.callback(3, (to_change - pages), FRAMENR(to_change->frame)); /*zapisano*/
          }
+         
+         to_change->counter = 0;
+         to_change->properties = 0;
          
          /*    wczytuję stronę z dysku z adresu
           *       page_nr
@@ -191,6 +212,9 @@ int load_page(unsigned page_nr){
          sim_p.callback(5, page_nr, FRAMENR(to_change->frame)); /*wczytano*/
          
          pages[page_nr].frame = to_change->frame;
+         pages[page_nr].properties |= VBIT;
+         pages[page_nr].counter = 0;
+         
       }
    }
    
