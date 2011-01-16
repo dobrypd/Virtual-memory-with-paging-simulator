@@ -7,5 +7,7 @@
 */
 
 Opis rozwiązania: (w tym użytych metod komunikacji i synchronizacji)
-synchronizacja: model czytelników i pisarzy na każdej danej stronie,
-inne: wykorzystanie aio przy odczycie/zapisie do pliku
+
+FIFO i LFU: zeruję licznik przy zapisaniu na dysk
+LFU: zliczam od momentu załadowania do symulowanej pamięci fizycznej
+FIFO:podczas 

@@ -15,8 +15,8 @@ void callback(int op, int arg1, int arg2)
 }
 int main(){
 #define ROZMIARRAMKI 4
-#define ILERAMEK 1
-#define ILESTRON 4
+#define ILERAMEK 4
+#define ILESTRON 16
    page_sim_init(ROZMIARRAMKI/*rozmiar ramki*/, ILERAMEK/*ilość pamięci (ilość ramek)*/,
                  ILESTRON/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
                  &callback);

@@ -18,12 +18,14 @@ int verbose = 0;
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <aio.h>
+#include <pthread.h>
 
 #include "err.h"
 #include "page.h"
 #include "pagesim.h"
 #include "strategy.h"
 
+/*TODO: nazwa pagefile jest za mała, bo może być odpalona biblioteka wiele razy*/
 #define PAGEFILENAME "./pagefile"
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
@@ -42,9 +44,11 @@ int pagefileFD = 0;
 /*struktury aiocb dla każdej strony*/
 struct aiocb* aiocb_for_frame = NULL;
 
-
 /*parametry symulacji*/
 pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
+
+/*synchronizacja*/
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*-------------deklaracje--------------*/
 void initPage(page* newPage);
@@ -57,12 +61,14 @@ uint8_t* alloc(unsigned page_nr);
 int write_page(page* wp, unsigned nr);
 int read_page(page* rp, unsigned nr);
 int load_page(unsigned page_nr);
+int check_addr(unsigned a);
 int page_sim_get(unsigned a, uint8_t *v);
 int page_sim_set(unsigned a, uint8_t v);
 /***************************************/
 
 
 void initPage(page* newPage){
+   /*lock*/
    newPage->properties = 0;
    newPage->counter = 0;
    newPage->frame = NULL;
@@ -89,6 +95,10 @@ int page_sim_init(unsigned page_size,
                          pagesim_callback callback){
    /*zakładam że parametry są potęgami dwójki*/
    
+   if(init != 0){
+      errno = EPERM; /*niedozwolone jest wlaczenie dwuch w jednym procesie*/
+      return -1;
+   }
    sim_p.page_size = page_size;
    sim_p.mem_size = mem_size;
    sim_p.addr_space_size = addr_space_size;
@@ -193,7 +203,7 @@ int write_page(page* wp, unsigned nr){
    struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
    aiocb_waiton[0] = aiocb_for_frame + FRAMENR(wp->frame);
    SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
-   if (VERBOSE) printf("\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(wp->frame)));
+   if (VERBOSE) fprintf(stderr, "\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(wp->frame)));
    free(aiocb_waiton);
    
    sim_p.callback(3, nr, FRAMENR(wp->frame)); /*zapisano*/
@@ -218,7 +228,7 @@ int read_page(page* rp, unsigned nr){
    struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
    aiocb_waiton[0] = aiocb_for_frame + FRAMENR(rp->frame);
    SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
-   if (VERBOSE) printf("\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(rp->frame)));
+   if (VERBOSE) fprintf(stderr, "\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(rp->frame)));
    free(aiocb_waiton);
    
    rp->properties |= VBIT;
@@ -271,19 +281,28 @@ int load_page(unsigned page_nr){
       } /* else swapping */
    } /*VPAGE check*/
    
-   touch_page(pages + page_nr);
+   touch_page(pages + page_nr, sim_p.addr_space_size);
    if (verbose) fprintf(stderr, "\tloaded\n");
    
    return 0;
 } /*load_page*/
 
-
+int check_addr(unsigned a){
+   if (a > (sim_p.addr_space_size*sim_p.page_size - 1))
+      return -1;
+   return 0;
+}
 
 int page_sim_get(unsigned a, uint8_t *v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_get(%#x, &): \n", a);
    if(!sim_p.init){
       if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
       return -1;
+   }
+   
+   if(check_addr(a)){
+      if (verbose) fprintf(stderr, "Addres incorrect\n");
+      return -2;
    }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczenie odwolania do strony*/
@@ -306,6 +325,11 @@ int page_sim_set(unsigned a, uint8_t v){
    if(!sim_p.init){
       if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
       return -1;
+   }
+   
+   if(check_addr(a)){
+      if (verbose) fprintf(stderr, "Addres incorrect\n");
+      return -2;
    }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczecie odwolania do strony*/

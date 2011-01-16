@@ -15,17 +15,17 @@
 
 
 page* select_page(page* pages, size_t size){
-#if DEBUG == 1
+   #if DEBUG == 1
    fprintf (stderr, "/***************select_page*************************/\n");
-#endif
+   #endif
    unsigned i;
    page* minCounterPageModified = NULL;
    page* minCounterPageUnmodified = NULL;
    unsigned long long minM = ULLONG_MAX, minUM = ULLONG_MAX;
    for(i = 0; i < size; ++i){
-#if DEBUG == 1
+      #if DEBUG == 1
       fprintf(stderr, "Page nr: %d (ADDR = %#x), properties: %u, frame addres: %#x, counter: %llu\n", i, pages + i, pages[i].properties, pages[i].frame, pages[i].counter);
-#endif
+      #endif
       if (VPAGE(pages[i])){
          if(MPAGE(pages[i])){
             if (pages[i].counter < minM){
@@ -40,19 +40,19 @@ page* select_page(page* pages, size_t size){
          }
       }
    }
-#if DEBUG == 1
+   #if DEBUG == 1
    fprintf(stderr, "SELECTED: MOD%#x \tUMOD%#x\n", minCounterPageModified, minCounterPageUnmodified);
    fprintf (stderr, "/***************************************************/\n");
-#endif
+   #endif
    if ((minUM == ULLONG_MAX) && (minM == ULLONG_MAX)) return NULL;
    if (minUM <= minM) return minCounterPageUnmodified;
    return minCounterPageModified;
 }
 
-int touch_page(page* tpage){
-#if DEBUG == 1
+int touch_page(page* tpage, size_t size){
+   #if DEBUG == 1
    fprintf (stderr, "touch page\n");
-#endif
+   #endif
    tpage->counter++;
    return 0;
 }

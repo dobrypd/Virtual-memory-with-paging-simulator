@@ -14,6 +14,6 @@
 #include "page.h"
 extern page* select_page(page* pages, size_t size);
 
-extern int touch_page(page* tpage);
+extern int touch_page(page* tpage, size_t size);
 
 #endif

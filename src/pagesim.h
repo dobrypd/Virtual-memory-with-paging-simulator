@@ -19,6 +19,8 @@
 #define MAXADDRSPACESIZE 512
 
 #define SECURE(X, TEXT)    if ( (X) == -1) syserr(#TEXT"\n")
+#define INITNR  int error12345678901
+#define SECURENR(X, TEXT)  if (( error12345678901 = (X)) != 0 ) syserrnr(error12345678901, #TEXT"\n")
 
 /*init library*/
 typedef void (*pagesim_callback)(int op, int arg1, int arg2);
