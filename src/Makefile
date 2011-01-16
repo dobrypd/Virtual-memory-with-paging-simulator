@@ -27,12 +27,14 @@ lfu: strategyLFU.c strategy.h
 
 pagesim.o: pagesim.c pagesim.h
 	$(CC) $(CFLAGS) pagesim.c -o pagesim.o
+err.o: err.c err.h
+	$(CC) $(CFLAGS) err.c -o err.o
 
-fifotest: fifo pagesim.o
-	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o -o simpleTest
+fifotest: fifo pagesim.o err.o
+	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o err.o -o simpleTest
 
-lfutest: lfu pagesim.o
-	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o -o simpleTest
+lfutest: lfu pagesim.o err.o
+	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o err.o -o simpleTest
 
 clean:
 	rm -f *.o $(ALLTESTS) *~

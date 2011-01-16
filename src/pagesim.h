@@ -18,6 +18,8 @@
 #define MINADDRSPACESIZE 1
 #define MAXADDRSPACESIZE 512
 
+#define SECURE(X, TEXT)    if ( (X) == -1) syserr(#TEXT"\n")
+
 /*init library*/
 typedef void (*pagesim_callback)(int op, int arg1, int arg2);
 

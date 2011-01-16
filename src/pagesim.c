@@ -19,6 +19,7 @@ int verbose = 0;
 #include <fcntl.h>
 #include <aio.h>
 
+#include "err.h"
 #include "page.h"
 #include "pagesim.h"
 #include "strategy.h"
@@ -98,25 +99,26 @@ int page_sim_init(unsigned page_size,
    /*zajmowanie zasobów*/
    unsigned i;
    pages = malloc(sizeof (page) * sim_p.addr_space_size);
+   if (pages == NULL) fatal("pages malloc() error");
    for(i = 0; i < sim_p.addr_space_size; ++i)
       initPage(pages + i);
    sim_memory = malloc(sim_p.mem_size * sim_p.page_size);
+   if (pages == NULL) fatal("pages malloc() error");
    aiocb_for_frame = malloc(sizeof(struct aiocb) * sim_p.mem_size);
+   if (pages == NULL) fatal("pages malloc() error");
       
    
    /*tworzenie pliku*/
-   pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT|O_TRUNC,0644);
-   if(pagefileFD == -1)
-      return -1;
+   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT|O_TRUNC,0644), creating file open():);
    
    /*inicjowanie co sie da w aiocb*/
    for(i = 0; i < sim_p.mem_size; ++i){
       aiocb_for_frame[i].aio_fildes = pagefileFD;
-      aiocb_for_frame[i].aio_offset = 0x0;
+      aiocb_for_frame[i].aio_offset = 0x0; /*do usupełnienia (nr strony)*/
       aiocb_for_frame[i].aio_nbytes = sim_p.page_size;
       aiocb_for_frame[i].aio_buf = sim_memory + i;
       aiocb_for_frame[i].aio_lio_opcode = LIO_NOP;
-      aiocb_for_frame[i].aio_sigevent = SIGEV_NONE;
+      aiocb_for_frame[i].aio_sigevent.sigev_notify = SIGEV_NONE;
    }
    
    sim_p.init = 1;
@@ -125,8 +127,8 @@ int page_sim_init(unsigned page_size,
 
 extern int page_sim_end(){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_end():\n");
-   close(pagefileFD);
-   unlink(PAGEFILENAME);
+   SECURE(close(pagefileFD), closing file: );
+   /*unlink(PAGEFILENAME);*/ 
    free(sim_memory);
    free(pages);
    free(aiocb_for_frame);
@@ -177,8 +179,9 @@ int load_page(unsigned page_nr){
          
          page* to_change = select_page(pages, sim_p.addr_space_size);
          if (to_change == NULL){
-            /*błąd?*/
+            /*błąd*/
             if (verbose) fprintf(stderr, "\t\t-page does not found. Pointer to page is NULL!!!\n");
+            errno = 0xffaaff;
             return -1;
          }
          if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", ((to_change - pages) ), to_change->counter);
@@ -193,12 +196,17 @@ int load_page(unsigned page_nr){
             sim_p.callback(2, (to_change - pages), FRAMENR(to_change->frame)); /*inicjacja*/
             
             /*ZAPIS*/
+            aiocb_for_frame[FRAMENR(to_change->frame)].aio_offset = (to_change - pages) * sim_p.page_size;
+            printf("saving addres: %#x\n", (to_change - pages) * sim_p.page_size);
+            
+            SECURE(aio_write(aiocb_for_frame + FRAMENR(to_change->frame)), aio_write():);
             
             sim_p.callback(3, (to_change - pages), FRAMENR(to_change->frame)); /*zapisano*/
          }
          
          to_change->counter = 0;
          to_change->properties = 0;
+         
          
          /*    wczytuję stronę z dysku z adresu
           *       page_nr
@@ -212,8 +220,18 @@ int load_page(unsigned page_nr){
          sim_p.callback(5, page_nr, FRAMENR(to_change->frame)); /*wczytano*/
          
          pages[page_nr].frame = to_change->frame;
+         
+         aiocb_for_frame[FRAMENR(pages[page_nr].frame)].aio_offset = page_nr * sim_p.page_size;
+         SECURE(aio_read(&aiocb_for_frame[FRAMENR(to_change->frame)]), aio_read():);
+         
          pages[page_nr].properties |= VBIT;
          pages[page_nr].counter = 0;
+         
+         if (aio_error(&aiocb_for_frame[FRAMENR(pages[page_nr].frame)]) == EINPROGRESS){
+            if (verbose) fprintf(stderr, "\t\twaiting...\n");
+         }
+         SECURE(aio_error(&aiocb_for_frame[FRAMENR(pages[page_nr].frame)]), aio_error():);
+         SECURE(aio_suspend((const struct aiocb *const *) aiocb_for_frame + FRAMENR(pages[page_nr].frame), 0, NULL), aio_suspend():);
          
       }
    }
@@ -227,13 +245,13 @@ int load_page(unsigned page_nr){
 int page_sim_get(unsigned a, uint8_t *v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_get(%#x, &): \n", a);
    if(!sim_p.init){
-      if (verbose) fprintf(stderr, "NIEZAINICJOWANY SYMULATOR: \n");
+      if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
       return -1;
    }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczenie odwolania do strony*/
    
-   load_page(PAGENR(a));
+   SECURE(load_page(PAGENR(a)), load_page());
    
    *v = pages[PAGENR(a)].frame[OFFSET(a)];
    
@@ -247,13 +265,13 @@ int page_sim_get(unsigned a, uint8_t *v){
 int page_sim_set(unsigned a, uint8_t v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_set(%#x, %u): \n", a, v);
    if(!sim_p.init){
-      if (verbose) fprintf(stderr, "NIEZAINICJOWANY SYMULATOR: \n");
+      if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
       return -1;
    }
    
    sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczecie odwolania do strony*/
    
-   load_page(PAGENR(a));
+   SECURE(load_page(PAGENR(a)), load_page():);
    
    pages[PAGENR(a)].properties |= (pages[PAGENR(a)].frame[OFFSET(a)] == v)?0:MBIT;
    pages[PAGENR(a)].frame[OFFSET(a)] = v;
