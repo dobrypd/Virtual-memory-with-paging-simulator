@@ -5,9 +5,9 @@
  * 4.01.2011r.
  *
 */
+#include <stdio.h>
 #define VERBOSE 1
 #if VERBOSE == 1
-#include <stdio.h>
 int verbose = 1;
 #else
 int verbose = 0;
@@ -46,11 +46,29 @@ struct aiocb* aiocb_for_frame = NULL;
 /*parametry symulacji*/
 pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 
+/*-------------deklaracje--------------*/
+void initPage(page* newPage);
+int page_sim_init(unsigned page_size, 
+      unsigned mem_size, unsigned addr_space_size,
+      unsigned max_concurrent_operations,
+      pagesim_callback callback);
+int page_sim_end();
+uint8_t* alloc(unsigned page_nr);
+int write_page(page* wp, unsigned nr);
+int read_page(page* rp, unsigned nr);
+int load_page(unsigned page_nr);
+int page_sim_get(unsigned a, uint8_t *v);
+int page_sim_set(unsigned a, uint8_t v);
+/***************************************/
+
+
 void initPage(page* newPage){
    newPage->properties = 0;
    newPage->counter = 0;
    newPage->frame = NULL;
 } /*initPage*/
+
+
 
 #define check_param ( \
        (sim_p.mem_size <= sim_p.addr_space_size)\
@@ -61,6 +79,8 @@ void initPage(page* newPage){
     && (sim_p.addr_space_size >= MINADDRSPACESIZE)\
     && (sim_p.addr_space_size <= MAXADDRSPACESIZE)\
     )
+
+
 
 int page_sim_init(unsigned page_size, 
                          unsigned mem_size,
@@ -75,6 +95,7 @@ int page_sim_init(unsigned page_size,
    sim_p.max_concurrent_operations = max_concurrent_operations;
    sim_p.callback = callback;
    sim_p.offsetMask = sim_p.page_size - 1;
+   sim_p.fff = 0;
    
    unsigned x = 2; /*log_2(page_size)*/
    sim_p.shift = 1;
@@ -109,13 +130,14 @@ int page_sim_init(unsigned page_size,
       
    
    /*tworzenie pliku*/
-   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT|O_TRUNC,0644), creating file open():);
+   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT,0644), creating file open():);
+   SECURE(truncate(PAGEFILENAME, sim_p.addr_space_size * sim_p.page_size), truncate file);   
    
    /*inicjowanie co sie da w aiocb*/
    for(i = 0; i < sim_p.mem_size; ++i){
       aiocb_for_frame[i].aio_fildes = pagefileFD;
       aiocb_for_frame[i].aio_offset = 0x0; /*do usupełnienia (nr strony)*/
-      aiocb_for_frame[i].aio_nbytes = sim_p.page_size;
+      aiocb_for_frame[i].aio_nbytes = sim_p.page_size * sizeof(uint8_t);
       aiocb_for_frame[i].aio_buf = sim_memory + i;
       aiocb_for_frame[i].aio_lio_opcode = LIO_NOP;
       aiocb_for_frame[i].aio_sigevent.sigev_notify = SIGEV_NONE;
@@ -125,10 +147,12 @@ int page_sim_init(unsigned page_size,
    return 0;
 } /*page_sim_init*/
 
-extern int page_sim_end(){
+
+
+int page_sim_end(){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_end():\n");
    SECURE(close(pagefileFD), closing file: );
-   /*unlink(PAGEFILENAME);*/ 
+   unlink(PAGEFILENAME);
    free(sim_memory);
    free(pages);
    free(aiocb_for_frame);
@@ -136,6 +160,7 @@ extern int page_sim_end(){
    if (verbose) fprintf(stderr, "OK\n");
    return 0;
 } /*page_sim_end()*/
+
 
 
 uint8_t* alloc(unsigned page_nr){
@@ -150,97 +175,109 @@ uint8_t* alloc(unsigned page_nr){
    return (sim_memory + sim_p.page_size*sim_p.fff++);
 } /*alloc*/
 
+
+
+int write_page(page* wp, unsigned nr){
+   sim_p.callback(2, nr, FRAMENR(wp->frame)); /*inicjacja*/
+   
+   /*ZAPIS*/
+   aiocb_for_frame[FRAMENR(wp->frame)].aio_offset = nr * sim_p.page_size;
+   if (verbose) fprintf(stderr, "\t\t\t-saving offset: %u\n", nr * sim_p.page_size);
+   
+   SECURE(aio_write(aiocb_for_frame + FRAMENR(wp->frame)), aio_write():);
+   
+   if (aio_error(aiocb_for_frame + FRAMENR(wp->frame)) == EINPROGRESS){
+      if (verbose) fprintf(stderr, "\t\t\t-waiting...\n");
+   }
+   
+   struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
+   aiocb_waiton[0] = aiocb_for_frame + FRAMENR(wp->frame);
+   SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
+   if (VERBOSE) printf("\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(wp->frame)));
+   free(aiocb_waiton);
+   
+   sim_p.callback(3, nr, FRAMENR(wp->frame)); /*zapisano*/
+   return 0;
+}
+
+
+
+int read_page(page* rp, unsigned nr){
+   sim_p.callback(4, nr, FRAMENR(rp->frame)); /*inicjowane*/
+   
+   /*WCZYTYWANIE*/  
+   aiocb_for_frame[FRAMENR(rp->frame)].aio_offset = nr * sim_p.page_size;
+   if (verbose) fprintf(stderr, "\t\t\t-reading offset: %u\n", nr * sim_p.page_size);
+   
+   SECURE(aio_read(aiocb_for_frame + FRAMENR(rp->frame)), aio_read():);
+   
+   if (aio_error(aiocb_for_frame + FRAMENR(rp->frame)) == EINPROGRESS){
+      if (verbose) fprintf(stderr, "\t\t\t-waiting...\n");
+   }
+   
+   struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
+   aiocb_waiton[0] = aiocb_for_frame + FRAMENR(rp->frame);
+   SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
+   if (VERBOSE) printf("\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(rp->frame)));
+   free(aiocb_waiton);
+   
+   rp->properties |= VBIT;
+   
+   sim_p.callback(5, nr, FRAMENR(rp->frame)); /*wczytano*/
+   return 0;
+}
+
+
+
 int load_page(unsigned page_nr){
    if (verbose) fprintf(stderr, "\tload_page(%u):\n", page_nr);
    
    /*sprawdzam czy jest w pamięci*/
    if(VPAGE(pages[page_nr])){
       if (verbose) fprintf(stderr, "\t-direct\n");
-      
    } else { /*nie jest w pamieci*/
       
       /*sprawdzam czy zaalokować czy wczytać z dysku*/
-      if(sim_p.fff <= sim_p.mem_size){
+      if(sim_p.fff < sim_p.mem_size){
          
          /*nie ma go w pamięci a pamięć jest jeszcze wolna*/
          /*ponieważ nie można zwalniać zasobów*/
          /*oznacza to że muszę to zaalokować*/
          if (verbose) fprintf(stderr, "\t-not initialized\n");
          pages[page_nr].frame = alloc(page_nr);
+      } else {  /* swapping pages */
          
-      } else {
-         
-         /* tu się zaczyna cała zabawa:
-          * nie mam strony w pamięci
-          * i nie mam miejsca na nią
-          * trzeba coś wywalić na dysk 
-         */
          if (verbose) fprintf(stderr, "\t-in pagefile\n");
          
          page* to_change = select_page(pages, sim_p.addr_space_size);
          if (to_change == NULL){
-            /*błąd*/
             if (verbose) fprintf(stderr, "\t\t-page does not found. Pointer to page is NULL!!!\n");
-            errno = 0xffaaff;
+            errno = ECANCELED;
             return -1;
          }
-         if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", ((to_change - pages) ), to_change->counter);
+         if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", (to_change - pages), to_change->counter);
          
          /*jezeli zmodyfikowana*/
          if (to_change->properties & MBIT){
-            /*    wyrzucam strone z pamięci (NR)
-            *       (to_change->frame - sim_memory) / sim_p.page_size
-            *    na dysk adres (w pliku dyskowym pagefile)
-            *       (to_change - pages) / sizeof(page)
-            */
-            sim_p.callback(2, (to_change - pages), FRAMENR(to_change->frame)); /*inicjacja*/
-            
-            /*ZAPIS*/
-            aiocb_for_frame[FRAMENR(to_change->frame)].aio_offset = (to_change - pages) * sim_p.page_size;
-            printf("saving addres: %#x\n", (to_change - pages) * sim_p.page_size);
-            
-            SECURE(aio_write(aiocb_for_frame + FRAMENR(to_change->frame)), aio_write():);
-            
-            sim_p.callback(3, (to_change - pages), FRAMENR(to_change->frame)); /*zapisano*/
-         }
+            SECURE(write_page(to_change, (to_change - pages)), write_page():);
+         } 
          
          to_change->counter = 0;
          to_change->properties = 0;
          
-         
-         /*    wczytuję stronę z dysku z adresu
-          *       page_nr
-          *    do pamieci pod adres
-          *       (to_change.frame - sim_memory) / sim_p.page_size
-          */
-         sim_p.callback(4, page_nr, FRAMENR(to_change->frame)); /*inicjowane*/
-         
-         /*WCZYTYWANIE*/
-         
-         sim_p.callback(5, page_nr, FRAMENR(to_change->frame)); /*wczytano*/
-         
-         pages[page_nr].frame = to_change->frame;
-         
-         aiocb_for_frame[FRAMENR(pages[page_nr].frame)].aio_offset = page_nr * sim_p.page_size;
-         SECURE(aio_read(&aiocb_for_frame[FRAMENR(to_change->frame)]), aio_read():);
-         
-         pages[page_nr].properties |= VBIT;
-         pages[page_nr].counter = 0;
-         
-         if (aio_error(&aiocb_for_frame[FRAMENR(pages[page_nr].frame)]) == EINPROGRESS){
-            if (verbose) fprintf(stderr, "\t\twaiting...\n");
-         }
-         SECURE(aio_error(&aiocb_for_frame[FRAMENR(pages[page_nr].frame)]), aio_error():);
-         SECURE(aio_suspend((const struct aiocb *const *) aiocb_for_frame + FRAMENR(pages[page_nr].frame), 0, NULL), aio_suspend():);
-         
-      }
-   }
+         /*odczytuje strone*/
+         pages[page_nr].frame = to_change->frame; /*na ten adres*/
+         SECURE(read_page(pages + page_nr, page_nr), read_page():);
+      } /* else swapping */
+   } /*VPAGE check*/
    
    touch_page(pages + page_nr);
-   
    if (verbose) fprintf(stderr, "\tloaded\n");
+   
    return 0;
 } /*load_page*/
+
+
 
 int page_sim_get(unsigned a, uint8_t *v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_get(%#x, &): \n", a);
@@ -261,6 +298,8 @@ int page_sim_get(unsigned a, uint8_t *v){
    
    return 0;
 } /*page_sim_get*/
+
+
 
 int page_sim_set(unsigned a, uint8_t v){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_set(%#x, %u): \n", a, v);
