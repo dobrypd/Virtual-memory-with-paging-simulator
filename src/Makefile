@@ -1,14 +1,13 @@
 ##/*
- #* page.h
+ #* Makefile
  #* 
  #* author: Piotr Dobrowolski
- #* 4.01.2011r.
+ #* 17.01.2011r.
  #*
 ##*/
-##MAKEFILE DO ZMIANY, TEN JEST DO TESTOWANIA
-CC = gcc
-CFLAGS = -Wall -c -pthread
-LDFLAGS = -Wall -lrt -pthread
+CC=gcc
+CFLAGS=-Wall -Werror -c -pthread -fPIC
+LDFLAGS=-Wall -Werror -lrt -pthread
 DEBUG=
 ifeq ($(debug), 1)
 	DEBUG=-g
@@ -16,25 +15,23 @@ endif
 CFLAGS += $(DEBUG)
 LDFLAGS += $(DEBUG)
 
-ALLTESTS = simpleTest
-OBJECTS = pagesim.o strategy.o
-OTHEROBJECTS = 
+LIBNAME=pagesim.so
+CCOBJS=pagesim.o err.o
+COBJS=$(CCOBJS) strategyFIFO.o strategyLFU.o
 
-fifo: strategyFIFO.c strategy.h
-	$(CC) $(CFLAGS) strategyFIFO.c -o strategy.o
-lfu: strategyLFU.c strategy.h
-	$(CC) $(CFLAGS) strategyLFU.c -o strategy.o
+all: fifo
 
-pagesim.o: pagesim.c pagesim.h
-	$(CC) $(CFLAGS) pagesim.c -o pagesim.o
-err.o: err.c err.h
-	$(CC) $(CFLAGS) err.c -o err.o
+fifo: $(CCOBJS) strategyFIFO.o
+	$(CC) $(LDFLAGS) -shared -Wl,-soname,$(LIBNAME) -o $(LIBNAME) $(CCOBJS) strategyFIFO.o
 
-fifotest: fifo pagesim.o err.o
-	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o err.o -o simpleTest
+lfu: $(CCOBJS) strategyLFU.o
+	$(CC) $(LDFLAGS) -shared -Wl,-soname,$(LIBNAME) -o $(LIBNAME) $(CCOBJS) strategyLFU.o
 
-lfutest: lfu pagesim.o err.o
-	$(CC) $(LDFLAGS) simpleTest.c pagesim.o strategy.o err.o -o simpleTest
+$(COBJS): %.o: %.c
+	$(CC) $(CFLAGS) -c $<
+
+test: simpleTest.c
+	$(CC) $(CFLAGS) -o test -L. -lpagesim.so simpleTest.c
 
 clean:
-	rm -f *.o $(ALLTESTS) *~
+	rm -f *.o *~
