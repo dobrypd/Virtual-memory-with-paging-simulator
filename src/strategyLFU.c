@@ -24,7 +24,7 @@ page* select_page(page* pages, size_t size){
    unsigned long long minM = ULLONG_MAX, minUM = ULLONG_MAX;
    for(i = 0; i < size; ++i){
       #if DEBUG == 1
-      fprintf(stderr, "Page nr: %d (ADDR = %#x), properties: %u, frame addres: %#x, counter: %llu\n", i, pages + i, pages[i].properties, pages[i].frame, pages[i].counter);
+      fprintf(stderr, "Page nr: %d (ADDR = %p), properties: %u, frame addres: %p, counter: %llu\n", i, pages + i, pages[i].properties, pages[i].frame, pages[i].counter);
       #endif
       if (VPAGE(pages[i])){
          if(MPAGE(pages[i])){
@@ -41,7 +41,7 @@ page* select_page(page* pages, size_t size){
       }
    }
    #if DEBUG == 1
-   fprintf(stderr, "SELECTED: MOD%#x \tUMOD%#x\n", minCounterPageModified, minCounterPageUnmodified);
+   fprintf(stderr, "SELECTED: MOD%p \tUMOD%p\n", minCounterPageModified, minCounterPageUnmodified);
    fprintf (stderr, "/***************************************************/\n");
    #endif
    if ((minUM == ULLONG_MAX) && (minM == ULLONG_MAX)) return NULL;

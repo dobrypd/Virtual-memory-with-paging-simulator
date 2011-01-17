@@ -48,7 +48,8 @@ struct aiocb* aiocb_for_frame = NULL;
 pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 
 /*synchronizacja*/
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t* lock_frame;
 
 /*-------------deklaracje--------------*/
 void initPage(page* newPage);
@@ -86,19 +87,11 @@ void initPage(page* newPage){
     && (sim_p.addr_space_size <= MAXADDRSPACESIZE)\
     )
 
-
-
-int page_sim_init(unsigned page_size, 
-                         unsigned mem_size,
-                         unsigned addr_space_size,
-                         unsigned max_concurrent_operations,
-                         pagesim_callback callback){
-   /*zakładam że parametry są potęgami dwójki*/
-   
-   if(init != 0){
-      errno = EPERM; /*niedozwolone jest wlaczenie dwuch w jednym procesie*/
-      return -1;
-   }
+void init_sim_p(unsigned page_size, 
+                unsigned mem_size,
+                unsigned addr_space_size,
+                unsigned max_concurrent_operations,
+                pagesim_callback callback){
    sim_p.page_size = page_size;
    sim_p.mem_size = mem_size;
    sim_p.addr_space_size = addr_space_size;
@@ -113,21 +106,9 @@ int page_sim_init(unsigned page_size,
       x <<= 1;
       sim_p.shift++;
    }
-   
-   if (verbose) fprintf(stderr, "DEBUG: "
-      "page_sim_init(): "
-      "\n\t->pagesize=%#x"
-      "\n\t->sim_offsetMask=%#x; "
-      "\n\t->sim_p.shift=%#x\n",sim_p.page_size ,sim_p.offsetMask, sim_p.shift);
-   
-   /*sprawdzenie poprawności wprowadzonych danych*/
-   if (!check_param){
-      /*dane są niepoprawne*/
-      /*errno = EINVAL;
-      return -1;*/
-   }
-   
-   /*zajmowanie zasobów*/
+}
+
+void alloc_res(){
    unsigned i;
    pages = malloc(sizeof (page) * sim_p.addr_space_size);
    if (pages == NULL) fatal("pages malloc() error");
@@ -137,23 +118,79 @@ int page_sim_init(unsigned page_size,
    if (pages == NULL) fatal("pages malloc() error");
    aiocb_for_frame = malloc(sizeof(struct aiocb) * sim_p.mem_size);
    if (pages == NULL) fatal("pages malloc() error");
-      
+}
+
+void init_synch(){
+   unsigned i;
+   INITNR;
+   lock_frame = malloc(sim_p.mem_size *  sizeof(pthread_mutex_t));
+   if (lock_frame == NULL) fatal("init_synch(): malloc() lock_frame");
+   for (i = 0; i < sim_p.mem_size; ++i)
+      SECURENR(pthread_mutex_init(&(lock_frame[i]), 0), pthread_mutex_init(lock_frame):);
+}
+
+void dest_synch(){
+   unsigned i;
+   INITNR;
+   if (lock_frame != NULL) {
+      for (i = 0; i < sim_p.mem_size; ++i)
+         SECURENR(pthread_mutex_destroy (&(lock_frame[i])), pthread_mutex_destroy(lock_frame):);
+      free(lock_frame);
+      lock_frame = NULL;
+   }
+}
+
+int page_sim_init(unsigned page_size, 
+                         unsigned mem_size,
+                         unsigned addr_space_size,
+                         unsigned max_concurrent_operations,
+                         pagesim_callback callback){
+   /*zakładam że parametry są potęgami dwójki*/
+   
+   INITNR;
+   
+   if (verbose) fprintf(stderr, "DEBUG: page_sim_init():\n");
+   
+   SECURENR(pthread_mutex_lock(&mutex), locking mutex: page_sim_init():);
+   
+   if(sim_p.init != 0){
+      errno = EPERM; /*niedozwolone jest wlaczenie dwoch w jednym procesie*/
+      return -1;
+   }
+   
+   init_sim_p(page_size, mem_size, addr_space_size, max_concurrent_operations, callback);
+   
+   /*sprawdzenie poprawności wprowadzonych danych*/
+   if (!check_param){
+      /*dane są niepoprawne*/
+      errno = EINVAL;
+      return -1;
+   }
+   
+   /*zajmowanie zasobów*/
+   alloc_res();     
    
    /*tworzenie pliku*/
-   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT,0644), creating file open():);
+   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT,0644), creating file- open():);
    SECURE(truncate(PAGEFILENAME, sim_p.addr_space_size * sim_p.page_size), truncate file);   
    
    /*inicjowanie co sie da w aiocb*/
+   unsigned i;
    for(i = 0; i < sim_p.mem_size; ++i){
       aiocb_for_frame[i].aio_fildes = pagefileFD;
-      aiocb_for_frame[i].aio_offset = 0x0; /*do usupełnienia (nr strony)*/
-      aiocb_for_frame[i].aio_nbytes = sim_p.page_size * sizeof(uint8_t);
-      aiocb_for_frame[i].aio_buf = sim_memory + i;
+      aiocb_for_frame[i].aio_offset = 0x0;
+      aiocb_for_frame[i].aio_nbytes = sim_p.page_size;
+      aiocb_for_frame[i].aio_buf = sim_memory + sim_p.page_size*i;
       aiocb_for_frame[i].aio_lio_opcode = LIO_NOP;
       aiocb_for_frame[i].aio_sigevent.sigev_notify = SIGEV_NONE;
    }
    
+   /*inicjacja synchronizacji*/
+   init_synch();
+   
    sim_p.init = 1;
+   
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_init():);
    return 0;
 } /*page_sim_init*/
 
@@ -161,12 +198,31 @@ int page_sim_init(unsigned page_size,
 
 int page_sim_end(){
    if (verbose) fprintf(stderr, "DEBUG: page_sim_end():\n");
+   
+   INITNR;
+   SECURENR(pthread_mutex_lock(&mutex), locking mutex: page_sim_end():);
+   
    SECURE(close(pagefileFD), closing file: );
-   unlink(PAGEFILENAME);
+   /*unlink(PAGEFILENAME);*/
    free(sim_memory);
    free(pages);
    free(aiocb_for_frame);
    sim_p.init = 0;
+   sim_p.page_size = 0;
+   sim_p.mem_size = 0;
+   sim_p.addr_space_size = 0;
+   sim_p.max_concurrent_operations = 0;
+   sim_p.callback = 0;
+   sim_p.shift = 0;
+   sim_p.offsetMask = 0;   
+   sim_p.fff = 0;
+
+   sim_memory = NULL;
+   pages = NULL;
+   aiocb_for_frame = NULL;
+   
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_end():);
+   
    if (verbose) fprintf(stderr, "OK\n");
    return 0;
 } /*page_sim_end()*/
@@ -241,8 +297,12 @@ int read_page(page* rp, unsigned nr){
 
 int load_page(unsigned page_nr){
    if (verbose) fprintf(stderr, "\tload_page(%u):\n", page_nr);
+   sim_p.callback(1, page_nr, 0); /*rozpoczecie odwolania do strony*/
+   
+   INITNR;
    
    /*sprawdzam czy jest w pamięci*/
+   SECURENR(pthread_mutex_lock(&mutex), locking mutex: load_page():);
    if(VPAGE(pages[page_nr])){
       if (verbose) fprintf(stderr, "\t-direct\n");
    } else { /*nie jest w pamieci*/
@@ -254,7 +314,9 @@ int load_page(unsigned page_nr){
          /*ponieważ nie można zwalniać zasobów*/
          /*oznacza to że muszę to zaalokować*/
          if (verbose) fprintf(stderr, "\t-not initialized\n");
+         
          pages[page_nr].frame = alloc(page_nr);
+         
       } else {  /* swapping pages */
          
          if (verbose) fprintf(stderr, "\t-in pagefile\n");
@@ -268,9 +330,15 @@ int load_page(unsigned page_nr){
          if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", (to_change - pages), to_change->counter);
          
          /*jezeli zmodyfikowana*/
-         if (to_change->properties & MBIT){
+         if ((to_change->properties) & MBIT){
+
+            SECURENR(pthread_mutex_lock(&lock_frame[to_change - pages]), locking lock_frame: load_page():);            
+            /*to musza byc kolejki ktore umia oddac mutexa w sprawdzeniu sprawdzam jeszcze raz co z nia sie dzieje*/
+            SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: load_page(): before write);
             SECURE(write_page(to_change, (to_change - pages)), write_page():);
-         } 
+            SECURENR(pthread_mutex_lock(&mutex), locking mutex: load_page(): after write);
+            SECURENR(pthread_mutex_unlock(&lock_frame[to_change - pages]), locking lock_frame: load_page():);
+         }
          
          to_change->counter = 0;
          to_change->properties = 0;
@@ -282,6 +350,9 @@ int load_page(unsigned page_nr){
    } /*VPAGE check*/
    
    touch_page(pages + page_nr, sim_p.addr_space_size);
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: load_page():);
+   
+   sim_p.callback(6, page_nr, 0); /*wykonano*/
    if (verbose) fprintf(stderr, "\tloaded\n");
    
    return 0;
@@ -305,13 +376,9 @@ int page_sim_get(unsigned a, uint8_t *v){
       return -2;
    }
    
-   sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczenie odwolania do strony*/
-   
    SECURE(load_page(PAGENR(a)), load_page());
    
    *v = pages[PAGENR(a)].frame[OFFSET(a)];
-   
-   sim_p.callback(6, PAGENR(a), FRAMENR(pages[PAGENR(a)].frame)); /*wykonano*/
    
    if (verbose) fprintf(stderr, "->OK\n");
    
@@ -332,14 +399,10 @@ int page_sim_set(unsigned a, uint8_t v){
       return -2;
    }
    
-   sim_p.callback(1, PAGENR(a), OFFSET(a)); /*rozpoczecie odwolania do strony*/
-   
    SECURE(load_page(PAGENR(a)), load_page():);
    
    pages[PAGENR(a)].properties |= (pages[PAGENR(a)].frame[OFFSET(a)] == v)?0:MBIT;
    pages[PAGENR(a)].frame[OFFSET(a)] = v;
-   
-   sim_p.callback(6, PAGENR(a), FRAMENR(pages[PAGENR(a)].frame)); /*wykonano*/
    
    if (verbose) fprintf(stderr, "->OK\n");
    

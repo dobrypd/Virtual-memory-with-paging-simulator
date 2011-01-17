@@ -23,7 +23,7 @@ page* select_page(page* pages, size_t size){
    unsigned long long min = ULLONG_MAX;
    for(i = 0; i < size; ++i){
       #if DEBUG == 1
-      fprintf(stderr, "Page nr: %d (ADDR = %#x), properties: %u, frame addres: %#x, counter: %llu\n", i, pages + i, pages[i].properties, pages[i].frame, pages[i].counter);
+      fprintf(stderr, "Page nr: %d (ADDR = %p), properties: %u, frame addres: %p, counter: %llu\n", i, pages + i, pages[i].properties, pages[i].frame, pages[i].counter);
       #endif
       if ((pages[i].properties & VBIT) && (pages[i].counter < min)){
          min = pages[i].counter;
@@ -31,7 +31,7 @@ page* select_page(page* pages, size_t size){
       }
    }
    #if DEBUG == 1
-   fprintf(stderr, "SELECTED: %#x\n", minCounterPage);
+   fprintf(stderr, "SELECTED: %p\n", minCounterPage);
    fprintf (stderr, "/***************************************************/\n");
    #endif
    return minCounterPage;

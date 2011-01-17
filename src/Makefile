@@ -7,8 +7,8 @@
 ##*/
 ##MAKEFILE DO ZMIANY, TEN JEST DO TESTOWANIA
 CC = gcc
-CFLAGS = -Wall -c
-LDFLAGS = -Wall -lrt
+CFLAGS = -Wall -c -pthread
+LDFLAGS = -Wall -lrt -pthread
 DEBUG=
 ifeq ($(debug), 1)
 	DEBUG=-g
