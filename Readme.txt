@@ -25,3 +25,9 @@ Strategie:
    do aktualizowania informacji o stronie wykonuję touch_page
       
 Biblioteka używa do komunikowania się zmiennych globalnych.
+
+Aby złączyć bibliotekę należy odpalić make fifo / make lfu, oraz linkować program wg schematu:
+gcc simpleTest.c -o test -L. -lpagesim
+jeżeli pagesim.so jest w tym samym katalogu to wywołać:
+LD_LIBRARY_PATH=.
+export LD_LIBRARY_PATH
