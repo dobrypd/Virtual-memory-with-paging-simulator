@@ -15,6 +15,7 @@ int verbose = 0;
 
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <aio.h>
@@ -25,8 +26,7 @@ int verbose = 0;
 #include "pagesim.h"
 #include "strategy.h"
 
-/*TODO: nazwa pagefile jest za mała, bo może być odpalona biblioteka wiele razy*/
-#define PAGEFILENAME "./pagefile"
+#define PAGEFILENAME "pagefileXXXXXX"
 /*define liczące numer strony*/
 /* i offset z adresu wirtualnego */
 #define PAGENR(ADDR) ((ADDR) >> sim_p.shift)
@@ -41,15 +41,19 @@ page* pages = 0;
 uint8_t* sim_memory = NULL;
 /*deskryptor pliku stron na dysku*/
 int pagefileFD = 0;
+char pagefile_name[1024];
 /*struktury aiocb dla każdej strony*/
 struct aiocb* aiocb_for_frame = NULL;
+/*ile operacji aktualnie*/
+unsigned current_operations = 0;
 
 /*parametry symulacji*/
 pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 
 /*synchronizacja*/
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t* lock_frame;
+pthread_cond_t io_limit = PTHREAD_COND_INITIALIZER;
+pthread_cond_t in_use = PTHREAD_COND_INITIALIZER;
 
 /*-------------deklaracje--------------*/
 void initPage(page* newPage);
@@ -59,8 +63,7 @@ int page_sim_init(unsigned page_size,
       pagesim_callback callback);
 int page_sim_end();
 uint8_t* alloc(unsigned page_nr);
-int write_page(page* wp, unsigned nr);
-int read_page(page* rp, unsigned nr);
+int rw_page(page* wp, unsigned nr, unsigned OPTYPE);
 int load_page(unsigned page_nr);
 int check_addr(unsigned a);
 int page_sim_get(unsigned a, uint8_t *v);
@@ -120,26 +123,6 @@ void alloc_res(){
    if (pages == NULL) fatal("pages malloc() error");
 }
 
-void init_synch(){
-   unsigned i;
-   INITNR;
-   lock_frame = malloc(sim_p.mem_size *  sizeof(pthread_mutex_t));
-   if (lock_frame == NULL) fatal("init_synch(): malloc() lock_frame");
-   for (i = 0; i < sim_p.mem_size; ++i)
-      SECURENR(pthread_mutex_init(&(lock_frame[i]), 0), pthread_mutex_init(lock_frame):);
-}
-
-void dest_synch(){
-   unsigned i;
-   INITNR;
-   if (lock_frame != NULL) {
-      for (i = 0; i < sim_p.mem_size; ++i)
-         SECURENR(pthread_mutex_destroy (&(lock_frame[i])), pthread_mutex_destroy(lock_frame):);
-      free(lock_frame);
-      lock_frame = NULL;
-   }
-}
-
 int page_sim_init(unsigned page_size, 
                          unsigned mem_size,
                          unsigned addr_space_size,
@@ -171,8 +154,8 @@ int page_sim_init(unsigned page_size,
    alloc_res();     
    
    /*tworzenie pliku*/
-   SECURE(pagefileFD = open(PAGEFILENAME, O_RDWR|O_CREAT,0644), creating file- open():);
-   SECURE(truncate(PAGEFILENAME, sim_p.addr_space_size * sim_p.page_size), truncate file);   
+   strcpy(pagefile_name, PAGEFILENAME);
+   SECURE(pagefileFD = mkstemp(pagefile_name), mkstemp);
    
    /*inicjowanie co sie da w aiocb*/
    unsigned i;
@@ -185,9 +168,7 @@ int page_sim_init(unsigned page_size,
       aiocb_for_frame[i].aio_sigevent.sigev_notify = SIGEV_NONE;
    }
    
-   /*inicjacja synchronizacji*/
-   init_synch();
-   
+   current_operations = 0;
    sim_p.init = 1;
    
    SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_init():);
@@ -242,54 +223,48 @@ uint8_t* alloc(unsigned page_nr){
 } /*alloc*/
 
 
-
-int write_page(page* wp, unsigned nr){
-   sim_p.callback(2, nr, FRAMENR(wp->frame)); /*inicjacja*/
+/*OPTYPE 1-write 0-read*/
+int rw_page(page* pg, unsigned nr, unsigned OPTYPE){
+   sim_p.callback(2, nr, FRAMENR(pg->frame)); /*inicjacja*/
+   INITNR;
    
-   /*ZAPIS*/
-   aiocb_for_frame[FRAMENR(wp->frame)].aio_offset = nr * sim_p.page_size;
-   if (verbose) fprintf(stderr, "\t\t\t-saving offset: %u\n", nr * sim_p.page_size);
+   while(current_operations >= sim_p.max_concurrent_operations){
+      SECURENR(pthread_cond_wait(&io_limit, &mutex), pthread cond wait in rw_page);
+   }
    
-   SECURE(aio_write(aiocb_for_frame + FRAMENR(wp->frame)), aio_write():);
+   if(!sim_p.init){
+      errno = 1010202; /*TODO:ENOINIT*/
+      return -1;
+   }
    
-   if (aio_error(aiocb_for_frame + FRAMENR(wp->frame)) == EINPROGRESS){
+   current_operations++;
+   
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex in read/write page:);
+   
+   /*ZAPIS / ODCZYT*/
+   aiocb_for_frame[FRAMENR(pg->frame)].aio_offset = nr * sim_p.page_size;
+   if (verbose) fprintf(stderr, "\t\t\t-saving/reading offset: %u\n", nr * sim_p.page_size);
+   
+   if(OPTYPE == 1) {
+      SECURE(aio_write(aiocb_for_frame + FRAMENR(pg->frame)), aio_write():);
+   } else {
+      SECURE(aio_read(aiocb_for_frame + FRAMENR(pg->frame)), aio_read():);
+   }
+   
+   if (aio_error(aiocb_for_frame + FRAMENR(pg->frame)) == EINPROGRESS){
       if (verbose) fprintf(stderr, "\t\t\t-waiting...\n");
    }
    
    struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
-   aiocb_waiton[0] = aiocb_for_frame + FRAMENR(wp->frame);
+   aiocb_waiton[0] = aiocb_for_frame + FRAMENR(pg->frame);
    SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
-   if (VERBOSE) fprintf(stderr, "\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(wp->frame)));
+   if (VERBOSE) fprintf(stderr, "\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(pg->frame)));
    free(aiocb_waiton);
    
-   sim_p.callback(3, nr, FRAMENR(wp->frame)); /*zapisano*/
-   return 0;
-}
-
-
-
-int read_page(page* rp, unsigned nr){
-   sim_p.callback(4, nr, FRAMENR(rp->frame)); /*inicjowane*/
-   
-   /*WCZYTYWANIE*/  
-   aiocb_for_frame[FRAMENR(rp->frame)].aio_offset = nr * sim_p.page_size;
-   if (verbose) fprintf(stderr, "\t\t\t-reading offset: %u\n", nr * sim_p.page_size);
-   
-   SECURE(aio_read(aiocb_for_frame + FRAMENR(rp->frame)), aio_read():);
-   
-   if (aio_error(aiocb_for_frame + FRAMENR(rp->frame)) == EINPROGRESS){
-      if (verbose) fprintf(stderr, "\t\t\t-waiting...\n");
-   }
-   
-   struct aiocb **aiocb_waiton = malloc(sizeof(struct aiocb*));
-   aiocb_waiton[0] = aiocb_for_frame + FRAMENR(rp->frame);
-   SECURE(aio_suspend((const struct aiocb *const *) aiocb_waiton, 1, NULL), aio_suspend():);
-   if (VERBOSE) fprintf(stderr, "\t\t\t-dump: errno=%d\n", aio_error(aiocb_for_frame + FRAMENR(rp->frame)));
-   free(aiocb_waiton);
-   
-   rp->properties |= VBIT;
-   
-   sim_p.callback(5, nr, FRAMENR(rp->frame)); /*wczytano*/
+   sim_p.callback(3, nr, FRAMENR(pg->frame)); /*zapisano*/
+   SECURENR(pthread_mutex_lock(&mutex), mutex lock read/write:);
+   current_operations--;
+   SECURENR(pthread_cond_signal(&io_limit), cond signal read/write:);
    return 0;
 }
 
@@ -301,11 +276,22 @@ int load_page(unsigned page_nr){
    
    INITNR;
    
+   while(pages[page_nr].properties & UBIT){
+      SECURENR(pthread_cond_wait(&(in_use), &mutex), cond wait- page in use);
+   }
+   
+   if(!sim_p.init){
+      errno = 1010202; /*TODO:ENOINIT*/
+      return -1;
+   }
+   
    /*sprawdzam czy jest w pamięci*/
-   SECURENR(pthread_mutex_lock(&mutex), locking mutex: load_page():);
    if(VPAGE(pages[page_nr])){
       if (verbose) fprintf(stderr, "\t-direct\n");
-   } else { /*nie jest w pamieci*/
+   } 
+   
+   
+   while (!VPAGE(pages[page_nr])) { /*nie jest w pamieci*/
       
       /*sprawdzam czy zaalokować czy wczytać z dysku*/
       if(sim_p.fff < sim_p.mem_size){
@@ -321,23 +307,24 @@ int load_page(unsigned page_nr){
          
          if (verbose) fprintf(stderr, "\t-in pagefile\n");
          
+         pages[page_nr].properties |= UBIT;
+         
          page* to_change = select_page(pages, sim_p.addr_space_size);
-         if (to_change == NULL){
-            if (verbose) fprintf(stderr, "\t\t-page does not found. Pointer to page is NULL!!!\n");
+         while(! to_change){
+            SECURENR(pthread_cond_wait(&in_use, &mutex), waiting to page);
+            to_change= select_page(pages, sim_p.addr_space_size);
+         }
+         if(!sim_p.init){
             errno = ECANCELED;
             return -1;
          }
+
          if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", (to_change - pages), to_change->counter);
          
+         to_change->properties |= UBIT;
          /*jezeli zmodyfikowana*/
          if ((to_change->properties) & MBIT){
-
-            SECURENR(pthread_mutex_lock(&lock_frame[to_change - pages]), locking lock_frame: load_page():);            
-            /*to musza byc kolejki ktore umia oddac mutexa w sprawdzeniu sprawdzam jeszcze raz co z nia sie dzieje*/
-            SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: load_page(): before write);
-            SECURE(write_page(to_change, (to_change - pages)), write_page():);
-            SECURENR(pthread_mutex_lock(&mutex), locking mutex: load_page(): after write);
-            SECURENR(pthread_mutex_unlock(&lock_frame[to_change - pages]), locking lock_frame: load_page():);
+            SECURE(rw_page(to_change, (to_change - pages), 1), write_page():);
          }
          
          to_change->counter = 0;
@@ -345,12 +332,19 @@ int load_page(unsigned page_nr){
          
          /*odczytuje strone*/
          pages[page_nr].frame = to_change->frame; /*na ten adres*/
-         SECURE(read_page(pages + page_nr, page_nr), read_page():);
+         SECURE(rw_page(pages + page_nr, page_nr, 0), read_page():);
+         
+         to_change->properties &= ~UBIT;
+         
+         pages[page_nr].properties |= VBIT;
+         pages[page_nr].properties &= ~MBIT;
       } /* else swapping */
    } /*VPAGE check*/
    
    touch_page(pages + page_nr, sim_p.addr_space_size);
-   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: load_page():);
+   
+   pages[page_nr].properties &= ~UBIT;
+   SECURENR(pthread_cond_broadcast(&in_use), broadcast);
    
    sim_p.callback(6, page_nr, 0); /*wykonano*/
    if (verbose) fprintf(stderr, "\tloaded\n");
@@ -365,20 +359,26 @@ int check_addr(unsigned a){
 }
 
 int page_sim_get(unsigned a, uint8_t *v){
+   INITNR;
    if (verbose) fprintf(stderr, "DEBUG: page_sim_get(%#x, &): \n", a);
+   SECURENR(pthread_mutex_lock(&mutex), locking mutex: page_sim_get():);
    if(!sim_p.init){
       if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
+      SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: while error():);
       return -1;
    }
    
    if(check_addr(a)){
       if (verbose) fprintf(stderr, "Addres incorrect\n");
+      SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: while error():);
       return -2;
    }
    
    SECURE(load_page(PAGENR(a)), load_page());
    
    *v = pages[PAGENR(a)].frame[OFFSET(a)];
+   
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_get():);
    
    if (verbose) fprintf(stderr, "->OK\n");
    
@@ -388,14 +388,18 @@ int page_sim_get(unsigned a, uint8_t *v){
 
 
 int page_sim_set(unsigned a, uint8_t v){
+   INITNR;
    if (verbose) fprintf(stderr, "DEBUG: page_sim_set(%#x, %u): \n", a, v);
+   SECURENR(pthread_mutex_lock(&mutex), locking mutex: page_sim_set():);
    if(!sim_p.init){
       if (verbose) fprintf(stderr, "SIMULATOR NOT INITIALIZED!\n");
+      SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: while error():);
       return -1;
    }
    
    if(check_addr(a)){
       if (verbose) fprintf(stderr, "Addres incorrect\n");
+      SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: while error():);
       return -2;
    }
    
@@ -403,6 +407,8 @@ int page_sim_set(unsigned a, uint8_t v){
    
    pages[PAGENR(a)].properties |= (pages[PAGENR(a)].frame[OFFSET(a)] == v)?0:MBIT;
    pages[PAGENR(a)].frame[OFFSET(a)] = v;
+   
+   SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_set():);
    
    if (verbose) fprintf(stderr, "->OK\n");
    
