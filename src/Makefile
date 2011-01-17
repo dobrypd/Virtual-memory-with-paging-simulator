@@ -8,7 +8,6 @@
 CC=gcc
 CFLAGS=-Wall -Werror -pthread -fPIC -lrt
 LDFLAGS=-Wall -Werror -lrt -pthread
-LD_LIBRARY_PATH=.
 DEBUG=
 ifeq ($(debug), 1)
 DEBUG=-g
@@ -26,7 +25,7 @@ fifo: $(CCOBJS) strategyFIFO.o
 	$(CC) $(LDFLAGS) -shared -Wl,-soname,lib$(LIBNAME).so -o lib$(LIBNAME).so $(CCOBJS) strategyFIFO.o
 
 lfu: $(CCOBJS) strategyLFU.o
-	$(CC) $(LDFLAGS) -shared -Wl,-soname,$(LIBNAME) -o lib$(LIBNAME).so $(CCOBJS) strategyLFU.o
+	$(CC) $(LDFLAGS) -shared -Wl,-soname,lib$(LIBNAME).so -o lib$(LIBNAME).so $(CCOBJS) strategyLFU.o
 
 $(COBJS): %.o: %.c
 	$(CC) $(CFLAGS) -c $<
