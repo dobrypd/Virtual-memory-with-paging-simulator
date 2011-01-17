@@ -11,7 +11,7 @@
 #include "page.h"
 #include "strategy.h"
 
-#define DEBUG 1
+#define DEBUG 0
 
 
 page* select_page(page* pages, size_t size){

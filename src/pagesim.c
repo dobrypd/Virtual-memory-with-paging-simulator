@@ -6,7 +6,7 @@
  *
 */
 #include <stdio.h>
-#define VERBOSE 1
+#define VERBOSE 0
 #if VERBOSE == 1
 int verbose = 1;
 #else

@@ -1,9 +1,5 @@
-----
-Struktura strony zawierać będzie: bit obezcności, bit modyfikacji (dla optymalizacji IO z dyskiem), bit użycia? aby 
-zabezpieczyć synchronizacje, adres fizyczny strony.
-
-
--------
-na razie bez obsługi błędów....
-dodać to później
-
+zrobić callback
+jakies testy
+TODO w 2 miejscach
+readme.txt
+i chyba tyle
