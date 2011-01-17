@@ -6,8 +6,8 @@
  *
 */
 #include <stdio.h>
-#define VERBOSE 1
-#if VERBOSE == 0
+#define VERBOSE 0
+#if VERBOSE == 1
 int verbose = 1;
 #else
 int verbose = 0;
@@ -68,21 +68,6 @@ pageSimParam_t sim_p = {0,0,0,0,0,0,0,0,0};
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t io_limit = PTHREAD_COND_INITIALIZER;
 pthread_cond_t in_use = PTHREAD_COND_INITIALIZER;
-
-/*-------------deklaracje--------------*/
-void initPage(page* newPage);
-int page_sim_init(unsigned page_size, 
-      unsigned mem_size, unsigned addr_space_size,
-      unsigned max_concurrent_operations,
-      pagesim_callback callback);
-int page_sim_end();
-uint8_t* alloc(unsigned page_nr);
-int rw_page(page* wp, unsigned nr, unsigned OPTYPE);
-int load_page(unsigned page_nr);
-int check_addr(unsigned a);
-int page_sim_get(unsigned a, uint8_t *v);
-int page_sim_set(unsigned a, uint8_t v);
-/***************************************/
 
 
 
@@ -203,7 +188,7 @@ int page_sim_end(){
    CHECKINIT
    
    SECURE(close(pagefileFD), closing file: );
-   unlink(pagefile_name);
+   SECURE(unlink(pagefile_name), unlink());
    free(sim_memory);
    free(pages);
    free(aiocb_for_frame);
@@ -254,10 +239,11 @@ int rw_page(page* pg, unsigned nr, unsigned OPTYPE){
    
    current_operations++;
    
+   aiocb_for_frame[FRAMENR(pg->frame)].aio_offset = nr * sim_p.page_size;
+   
    SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex in read/write page:);
    
    /*ZAPIS / ODCZYT*/
-   aiocb_for_frame[FRAMENR(pg->frame)].aio_offset = nr * sim_p.page_size;
    if (verbose) fprintf(stderr, "\t\t\t-saving/reading offset: %u\n", nr * sim_p.page_size);
    
    if(OPTYPE == 1) {
@@ -299,7 +285,6 @@ int load_page(unsigned page_nr){
       if (verbose) fprintf(stderr, "\t-direct\n");
    } 
    
-   
    while (!VPAGE(pages[page_nr])) { /*nie jest w pamieci*/
       
       /*sprawdzam czy zaalokować czy wczytać z dysku*/
@@ -325,7 +310,8 @@ int load_page(unsigned page_nr){
             to_change= select_page(pages, sim_p.addr_space_size);
          }
          CHECKINIT
-
+         to_change->properties &= ~VBIT;
+         
          if (verbose) fprintf(stderr, "\t\t-selected page nr %lu with counter=%llu\n", (to_change - pages), to_change->counter);
          
          to_change->properties |= UBIT;
@@ -337,7 +323,7 @@ int load_page(unsigned page_nr){
          }
          
          to_change->counter = 0;
-         to_change->properties = 0;
+         to_change->properties &= ~MBIT;
          
          /*odczytuje strone*/
          pages[page_nr].frame = to_change->frame; /*na ten adres*/
@@ -355,7 +341,6 @@ int load_page(unsigned page_nr){
    touch_page(pages + page_nr, sim_p.addr_space_size);
    
    pages[page_nr].properties &= ~UBIT;
-   SECURENR(pthread_cond_broadcast(&in_use), broadcast);
    
    if (verbose) fprintf(stderr, "\tloaded\n");
    
@@ -388,6 +373,7 @@ int page_sim_sg(unsigned a, uint8_t *v, unsigned OPTYPE){
       pages[PAGENR(a)].frame[OFFSET(a)] = *v;
    }
    
+   SECURENR(pthread_cond_broadcast(&in_use), broadcast);
    sim_p.callback(6, PAGENR(a), 0); /*wykonano odczyt zapis na stronie*/
    SECURENR(pthread_mutex_unlock(&mutex), unlocking mutex: page_sim_get():);
    

@@ -149,8 +149,10 @@ int main()
                   2/*przestrzeń adresowa*/, 4/*max ilość jednoczesnych operacji I/O*/,
                   &callback);
     for (i = 0; i < 10; ++i) {
-      page_sim_set(0, 4);
-      page_sim_set(7, 6);
+      unsigned a =0;
+      if ( (a = page_sim_set(0, 4)) != 0)
+         printf("DUPA%d\n", a);
+      if ( (a= page_sim_set(7, 6)) != 0)printf("DUPA%d\n", a);
     }
     page_sim_set(121217, 6);
     
